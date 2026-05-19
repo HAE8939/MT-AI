@@ -47,6 +47,7 @@ export function CanvasSizePicker({ value, className, onChange }: CanvasSizePicke
         placeholder="比例"
         options={options}
         popupMatchSelectWidth={false}
+        popupRender={(menu) => <div onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>{menu}</div>}
         onOpenChange={setOpen}
         onSearch={setSearch}
         onChange={selectSize}

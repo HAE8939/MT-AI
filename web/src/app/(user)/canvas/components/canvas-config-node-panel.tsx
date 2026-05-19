@@ -65,27 +65,29 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, inputs, o
   };
 
   return (
-    <div className="flex h-full w-full flex-col px-3 pb-3 pt-7 text-sm" style={{ color: theme.node.text }} onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()} onWheel={(event) => event.stopPropagation()}>
+    <div className="flex h-full w-full cursor-move flex-col px-3 pb-3 pt-7 text-sm" style={{ color: theme.node.text }} onWheel={(event) => event.stopPropagation()}>
       <div className="mb-2 flex items-center justify-between gap-3">
         <div className="shrink-0 text-sm font-semibold">生成配置</div>
-        <Segmented
-          size="small"
-          className="canvas-config-mode !rounded-md !p-0.5"
-          value={mode}
-          onChange={(value) => onConfigChange(node.id, { generationMode: value as CanvasGenerationMode })}
-          options={[
-            { value: "image", label: <span className="inline-flex items-center gap-1"><ImageIcon className="size-3.5" />生图</span> },
-            { value: "text", label: <span className="inline-flex items-center gap-1"><MessageSquare className="size-3.5" />文本</span> },
-          ]}
-        />
+        <div className="cursor-default" onMouseDown={(event) => event.stopPropagation()}>
+          <Segmented
+            size="small"
+            className="canvas-config-mode !rounded-md !p-0.5"
+            value={mode}
+            onChange={(value) => onConfigChange(node.id, { generationMode: value as CanvasGenerationMode })}
+            options={[
+              { value: "image", label: <span className="inline-flex items-center gap-1"><ImageIcon className="size-3.5" />生图</span> },
+              { value: "text", label: <span className="inline-flex items-center gap-1"><MessageSquare className="size-3.5" />文本</span> },
+            ]}
+          />
+        </div>
       </div>
 
-      <div className="mb-2 flex flex-wrap gap-1.5">
+      <div className="mb-2 flex flex-wrap gap-1.5" onMouseDown={(event) => event.stopPropagation()}>
         <InputChip label="提示词" value={`${inputSummary.textCount} 个`} style={chipStyle} />
         <InputChip label="参考图" value={`${inputSummary.imageCount} 张`} style={chipStyle} />
         <button
           type="button"
-          className="inline-flex h-7 items-center gap-1 rounded-md border px-2 text-[11px]"
+          className="inline-flex h-7 cursor-pointer items-center gap-1 rounded-md border px-2 text-[11px]"
           style={chipStyle}
           onClick={() => setPreviewOpen(true)}
         >
@@ -94,7 +96,7 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, inputs, o
         </button>
       </div>
 
-      <div className="mb-2 grid min-w-0 grid-cols-[minmax(0,1fr)_92px_64px] items-center gap-2">
+      <div className="mb-2 grid min-w-0 cursor-default grid-cols-[minmax(0,1fr)_92px_64px] items-center gap-2" onMouseDown={(event) => event.stopPropagation()}>
         <ModelPicker className="canvas-compact-control h-10" config={config} value={config.model} onChange={(model) => onConfigChange(node.id, { model })} onMissingConfig={() => openConfigDialog(true)} fullWidth />
         {mode === "image" ? <CanvasSizePicker className="h-10 min-w-0" value={node.metadata?.size || globalConfig.size || defaultConfig.size} onChange={(value) => onConfigChange(node.id, { size: value })} /> : null}
         <InputNumber min={1} max={15} className="canvas-compact-control canvas-control-number h-10 !w-full" value={count} onChange={(value) => onConfigChange(node.id, { count: Number(value) || 1 })} />
@@ -102,8 +104,9 @@ export function CanvasConfigNodePanel({ node, isRunning, inputSummary, inputs, o
 
       <Button
         type="primary"
-        className="mt-auto !h-9 !w-full !rounded-lg"
+        className="mt-auto !h-9 !w-full !cursor-pointer !rounded-lg"
         disabled={isRunning || (!inputSummary.textCount && !inputSummary.imageCount)}
+        onMouseDown={(event) => event.stopPropagation()}
         onClick={() => onGenerate(node.id)}
         icon={isRunning ? <LoaderCircle className="size-4 animate-spin" /> : <Play className="size-4" />}
       >

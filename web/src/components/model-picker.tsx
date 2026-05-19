@@ -23,6 +23,7 @@ export function ModelPicker({ config, value, onChange, className, fullWidth = fa
       showSearch
       className={`canvas-control-select ${className || ""}`}
       popupMatchSelectWidth={false}
+      popupRender={(menu) => <div onMouseDown={(event) => event.stopPropagation()} onPointerDown={(event) => event.stopPropagation()}>{menu}</div>}
       style={{ width, maxWidth: "100%", minWidth: 0, flexShrink: 1 }}
       value={value || undefined}
       placeholder={placeholder}
@@ -30,6 +31,7 @@ export function ModelPicker({ config, value, onChange, className, fullWidth = fa
       notFoundContent="请先到配置里拉取模型列表"
       onChange={onChange}
       onMouseDown={(event) => event.stopPropagation()}
+      onPointerDown={(event) => event.stopPropagation()}
       onClick={() => {
         if (!options.length) onMissingConfig?.();
       }}
