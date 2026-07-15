@@ -20,6 +20,11 @@
 
 完整变更记录见 [CHANGELOG.md](CHANGELOG.md)。
 
+## 第三方数据与内容
+
+- **灵感画廊提示词数据**（`web/public/gallery.json`、`web/public/prompts.json` 中 `nbp-` 前缀条目）与**提示词增强系统提示词**（`web/src/lib/prompt-enhance.ts`）来自 [NanoBanana Trending Prompts](https://github.com/jau123/nanobanana-trending-prompts) 项目，© [MeiGen.ai](https://meigen.ai)，采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 许可。本项目对数据做了格式转换（字段映射、标题生成、分类中文化），提示词增强系统提示词做了轻微改编。数据由 `web/scripts/build-gallery.mjs` 生成，可随上游更新重建。
+- 灵感画廊条目的封面图片托管在 `images.meigen.ai`，由浏览器直接加载，本项目不做镜像与再分发。
+
 ## 许可证
 
 上游项目采用 **AGPL-3.0** 许可证（见 [LICENSE](LICENSE)）。本项目作为其衍生作品，同样遵循 AGPL-3.0：后续公开发布或提供网络服务时，需以相同许可证开放对应源代码，并保留原作者版权声明。

@@ -1,4 +1,4 @@
-import { CopyPlus, Download, FolderCog, Plus, RotateCcw, Search, Upload } from "lucide-react";
+import { CopyPlus, Download, FolderCog, Plus, RotateCcw, Search, Sparkles, Upload } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { App, Button, Dropdown, Empty, Input, Modal, Spin, Tag } from "antd";
 
@@ -6,6 +6,7 @@ import { PromptCard } from "@/components/prompts/prompt-card";
 import { usePromptList, UNGROUPED_OPTION } from "@/components/prompts/use-prompt-list";
 import { getPromptText, isComboPrompt } from "@/components/prompts/prompt-combo";
 import { buildExportFile, downloadPromptJson, parseImportJson } from "@/components/prompts/prompt-io";
+import { GalleryDialog } from "./components/gallery-dialog";
 import { PromptDetailDialog } from "./components/prompt-detail-dialog";
 import { PromptEditorDialog } from "./components/prompt-editor-dialog";
 import { PromptGroupManagerDialog } from "./components/prompt-group-manager-dialog";
@@ -26,6 +27,7 @@ export default function PromptsPage() {
     const [editorOpen, setEditorOpen] = useState(false);
     const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
     const [groupManagerOpen, setGroupManagerOpen] = useState(false);
+    const [galleryOpen, setGalleryOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
     const addAsset = useAssetStore((state) => state.addAsset);
@@ -35,13 +37,7 @@ export default function PromptsPage() {
     const deletedJsonIds = usePromptStore((s) => s.deletedJsonIds);
     const restoreJsonPrompt = usePromptStore((s) => s.restoreJsonPrompt);
     const importPrompts = usePromptStore((s) => s.importPrompts);
-    const {
-        items: promptItems,
-        tags: promptTags,
-        groups: groupInfo,
-        total: totalPrompts,
-        isLoading,
-    } = usePromptList({ keyword: titleKeyword, tags: selectedTags, category: selectedCategory, group: selectedGroup });
+    const { items: promptItems, tags: promptTags, groups: groupInfo, total: totalPrompts, isLoading } = usePromptList({ keyword: titleKeyword, tags: selectedTags, category: selectedCategory, group: selectedGroup });
 
     const groupTabs = useMemo(() => {
         const tabs = [ALL_PROMPTS_OPTION, ...groupInfo.names];
@@ -81,9 +77,7 @@ export default function PromptsPage() {
         const isJson = jsonIds.includes(item.id);
         Modal.confirm({
             title: isJson ? "隐藏提示词" : "删除提示词",
-            content: isJson
-                ? `确定要隐藏「${item.title}」吗？此提示词来自项目文件，重新加载页面后可自动恢复。`
-                : `确定要删除「${item.title}」吗？此操作不可撤销。`,
+            content: isJson ? `确定要隐藏「${item.title}」吗？此提示词来自项目文件，重新加载页面后可自动恢复。` : `确定要删除「${item.title}」吗？此操作不可撤销。`,
             okText: isJson ? "隐藏" : "删除",
             okButtonProps: { danger: true },
             cancelText: "取消",
@@ -107,12 +101,7 @@ export default function PromptsPage() {
     };
 
     const exportCurrentGroup = () => {
-        const scoped =
-            selectedGroup === ALL_PROMPTS_OPTION
-                ? prompts
-                : selectedGroup === UNGROUPED_OPTION
-                  ? prompts.filter((p) => !p.group)
-                  : prompts.filter((p) => p.group === selectedGroup);
+        const scoped = selectedGroup === ALL_PROMPTS_OPTION ? prompts : selectedGroup === UNGROUPED_OPTION ? prompts.filter((p) => !p.group) : prompts.filter((p) => p.group === selectedGroup);
         if (scoped.length === 0) return message.info("当前分组暂无提示词");
         downloadPromptJson(buildExportFile(scoped), `prompts-${selectedGroup}`);
         message.success(`已导出「${selectedGroup}」${scoped.length} 条提示词`);
@@ -137,9 +126,7 @@ export default function PromptsPage() {
 
     return (
         <div className="flex h-full flex-col overflow-hidden bg-background text-stone-800 dark:text-stone-100">
-            <main
-                className="min-h-0 flex-1 overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-8 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.16)_1px,transparent_1px)]"
-            >
+            <main className="min-h-0 flex-1 overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-8 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.16)_1px,transparent_1px)]">
                 <div className="pb-8">
                     <div className="mx-auto max-w-5xl text-center">
                         <h1 className="text-4xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">提示词中心</h1>
@@ -156,6 +143,9 @@ export default function PromptsPage() {
                                 <Input size="large" className="min-w-[220px] flex-1" prefix={<Search className="size-4 text-stone-400" />} value={titleKeyword} placeholder="按标题查询" onChange={(event) => setTitleKeyword(event.target.value)} />
                                 <Button type="primary" size="large" icon={<Plus className="size-4" />} onClick={openCreateEditor}>
                                     新建提示词
+                                </Button>
+                                <Button size="large" icon={<Sparkles className="size-4" />} onClick={() => setGalleryOpen(true)}>
+                                    灵感画廊
                                 </Button>
                                 <Dropdown
                                     menu={{
@@ -179,12 +169,7 @@ export default function PromptsPage() {
                                     {groupTabs.map((tab) => {
                                         const active = selectedGroup === tab;
                                         return (
-                                            <Tag.CheckableTag
-                                                key={tab}
-                                                checked={active}
-                                                className={cn("prompt-filter-tag", active && "is-active")}
-                                                onChange={() => setSelectedGroup(tab)}
-                                            >
+                                            <Tag.CheckableTag key={tab} checked={active} className={cn("prompt-filter-tag", active && "is-active")} onChange={() => setSelectedGroup(tab)}>
                                                 {tab}
                                             </Tag.CheckableTag>
                                         );
@@ -242,12 +227,18 @@ export default function PromptsPage() {
 
                         {deletedJsonIds.length > 0 ? (
                             <div className="mx-auto mt-8 max-w-7xl rounded-lg border border-stone-200 bg-stone-50 p-4 dark:border-stone-700 dark:bg-stone-900">
-                                <div className="mb-2 text-xs font-medium text-stone-500 dark:text-stone-400">
-                                    已隐藏的项目内置提示词（{deletedJsonIds.length} 条）
-                                </div>
+                                <div className="mb-2 text-xs font-medium text-stone-500 dark:text-stone-400">已隐藏的项目内置提示词（{deletedJsonIds.length} 条）</div>
                                 <div className="flex flex-wrap gap-2">
                                     {deletedJsonIds.map((id) => (
-                                        <Tag key={id} closable onClose={(e) => { e.preventDefault(); handleRestore(id); }} className="text-xs">
+                                        <Tag
+                                            key={id}
+                                            closable
+                                            onClose={(e) => {
+                                                e.preventDefault();
+                                                handleRestore(id);
+                                            }}
+                                            className="text-xs"
+                                        >
                                             <RotateCcw className="mr-1 inline size-3" />
                                             {id}
                                         </Tag>
@@ -270,6 +261,7 @@ export default function PromptsPage() {
             />
             <PromptEditorDialog open={editorOpen} prompt={editingPrompt} onClose={() => setEditorOpen(false)} />
             <PromptGroupManagerDialog open={groupManagerOpen} onClose={() => setGroupManagerOpen(false)} />
+            <GalleryDialog open={galleryOpen} onClose={() => setGalleryOpen(false)} />
         </div>
     );
 }

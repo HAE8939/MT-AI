@@ -1,9 +1,11 @@
-import { Plus, Trash2 } from "lucide-react";
-import { useEffect, useMemo, useState } from "react";
-import { AutoComplete, Button, Input, Modal, Select, Space } from "antd";
+import { Plus, Sparkles, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
+import { App, AutoComplete, Button, Input, Modal, Select, Space } from "antd";
 
 import { addPrompt, updatePrompt, type Prompt } from "@/services/api/prompts";
+import { enhancePromptText } from "@/lib/prompt-enhance";
 import { normalizePromptKeys, PROMPT_COLORS, usePromptStore, type PromptColor, type PromptKeyGroup } from "@/stores/use-prompt-store";
+import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { PROMPT_COLOR_META } from "@/components/prompts/prompt-colors";
 
 const { TextArea } = Input;
@@ -29,6 +31,7 @@ function draftsToKeys(drafts: KeyDraft[]): PromptKeyGroup[] | undefined {
 }
 
 export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; prompt: Prompt | null; onClose: () => void }) {
+    const { message } = App.useApp();
     const isEdit = Boolean(prompt);
     const [title, setTitle] = useState("");
     const [promptText, setPromptText] = useState("");
@@ -37,6 +40,13 @@ export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; p
     const [group, setGroup] = useState<string>(UNGROUPED);
     const [color, setColor] = useState<PromptColor | undefined>(undefined);
     const [keyDrafts, setKeyDrafts] = useState<KeyDraft[]>([]);
+    const [enhancing, setEnhancing] = useState(false);
+    const [enhanceBackup, setEnhanceBackup] = useState<string | null>(null);
+    const enhanceAbortRef = useRef<AbortController | null>(null);
+
+    const effectiveConfig = useEffectiveConfig();
+    const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
+    const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
 
     const prompts = usePromptStore((s) => s.prompts);
     const storeGroups = usePromptStore((s) => s.groups);
@@ -55,12 +65,48 @@ export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; p
             setGroup(prompt?.group || UNGROUPED);
             setColor(prompt?.color);
             setKeyDrafts(keysToDrafts(prompt?.keys));
+            setEnhanceBackup(null);
+        } else {
+            enhanceAbortRef.current?.abort();
         }
     }, [open, prompt]);
 
+    useEffect(() => () => enhanceAbortRef.current?.abort(), []);
+
+    const handleEnhance = async () => {
+        const input = promptText.trim();
+        if (!input || enhancing) return;
+        const generationConfig = { ...effectiveConfig, model: effectiveConfig.textModel || effectiveConfig.model };
+        if (!isAiConfigReady(generationConfig, generationConfig.model)) {
+            openConfigDialog(true);
+            return;
+        }
+        const controller = new AbortController();
+        enhanceAbortRef.current = controller;
+        setEnhancing(true);
+        setEnhanceBackup(promptText);
+        try {
+            const answer = await enhancePromptText(generationConfig, input, (value) => setPromptText(value), { signal: controller.signal });
+            if (answer?.trim()) setPromptText(answer.trim());
+            message.success("提示词已增强，可点击「恢复原文」撤销");
+        } catch (error) {
+            const canceled = error instanceof Error && (error.message === "请求已取消" || error.name === "AbortError");
+            setPromptText(input);
+            if (!canceled) message.error(error instanceof Error ? error.message : "提示词增强失败");
+        } finally {
+            enhanceAbortRef.current = null;
+            setEnhancing(false);
+        }
+    };
+
+    const restoreEnhanceBackup = () => {
+        if (enhanceBackup === null) return;
+        setPromptText(enhanceBackup);
+        setEnhanceBackup(null);
+    };
+
     const addKeyDraft = () => setKeyDrafts((prev) => [...prev, { key: "", tagsText: "" }]);
-    const updateKeyDraft = (index: number, patch: Partial<KeyDraft>) =>
-        setKeyDrafts((prev) => prev.map((d, i) => (i === index ? { ...d, ...patch } : d)));
+    const updateKeyDraft = (index: number, patch: Partial<KeyDraft>) => setKeyDrafts((prev) => prev.map((d, i) => (i === index ? { ...d, ...patch } : d)));
     const removeKeyDraft = (index: number) => setKeyDrafts((prev) => prev.filter((_, i) => i !== index));
 
     const handleSave = () => {
@@ -92,8 +138,20 @@ export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; p
                     <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="给提示词起个名字" />
                 </div>
                 <div>
-                    <label className="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300">提示词内容{keyDrafts.length > 0 ? "（组合式卡片可留空，作为前置说明）" : ""}</label>
-                    <TextArea value={promptText} onChange={(e) => setPromptText(e.target.value)} placeholder="输入提示词正文" autoSize={{ minRows: 4, maxRows: 12 }} />
+                    <div className="mb-1 flex items-center justify-between gap-2">
+                        <label className="block text-sm font-medium text-stone-700 dark:text-stone-300">提示词内容{keyDrafts.length > 0 ? "（组合式卡片可留空，作为前置说明）" : ""}</label>
+                        <Space size={4}>
+                            {enhanceBackup !== null && !enhancing ? (
+                                <Button size="small" type="text" onClick={restoreEnhanceBackup}>
+                                    恢复原文
+                                </Button>
+                            ) : null}
+                            <Button size="small" icon={<Sparkles className="size-3.5" />} loading={enhancing} disabled={!promptText.trim()} onClick={handleEnhance}>
+                                AI 增强
+                            </Button>
+                        </Space>
+                    </div>
+                    <TextArea value={promptText} onChange={(e) => setPromptText(e.target.value)} placeholder="输入提示词正文" autoSize={{ minRows: 4, maxRows: 12 }} disabled={enhancing} />
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                     <div>
@@ -144,26 +202,15 @@ export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; p
                             添加键
                         </Button>
                     </div>
-                    <p className="mb-3 text-xs text-stone-500 dark:text-stone-400">
-                        填写后卡片会渲染为可勾选的键值组合构建器，勾选实时组合成 JSON 提示词。留空则为普通文本卡片。
-                    </p>
+                    <p className="mb-3 text-xs text-stone-500 dark:text-stone-400">填写后卡片会渲染为可勾选的键值组合构建器，勾选实时组合成 JSON 提示词。留空则为普通文本卡片。</p>
                     {keyDrafts.length === 0 ? (
                         <div className="text-xs text-stone-400 dark:text-stone-500">暂无键值组</div>
                     ) : (
                         <div className="space-y-3">
                             {keyDrafts.map((draft, index) => (
                                 <div key={index} className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)_auto] sm:items-start">
-                                    <Input
-                                        value={draft.key}
-                                        onChange={(e) => updateKeyDraft(index, { key: e.target.value })}
-                                        placeholder="键名，如 风格"
-                                    />
-                                    <TextArea
-                                        value={draft.tagsText}
-                                        onChange={(e) => updateKeyDraft(index, { tagsText: e.target.value })}
-                                        placeholder="候选值，逗号或换行分隔，如 现代简约, 工业风"
-                                        autoSize={{ minRows: 1, maxRows: 4 }}
-                                    />
+                                    <Input value={draft.key} onChange={(e) => updateKeyDraft(index, { key: e.target.value })} placeholder="键名，如 风格" />
+                                    <TextArea value={draft.tagsText} onChange={(e) => updateKeyDraft(index, { tagsText: e.target.value })} placeholder="候选值，逗号或换行分隔，如 现代简约, 工业风" autoSize={{ minRows: 1, maxRows: 4 }} />
                                     <Space.Compact>
                                         <Button danger size="small" icon={<Trash2 className="size-3.5" />} onClick={() => removeKeyDraft(index)} />
                                     </Space.Compact>
@@ -175,4 +222,4 @@ export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; p
             </div>
         </Modal>
     );
-};
+}

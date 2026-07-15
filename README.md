@@ -41,7 +41,7 @@
 - 专业角色：内置 7 个可增删改的 AI 角色（`public/roles.json`），画布角色工作流读取选中节点并生成连接的分析文本节点。
 - 全站 Agent：本机 Canvas Agent 连接 Codex / Claude Code，注册 32 个 MCP 工具，覆盖页面导航（`site_navigate`）、画布操作、生成工作台、提示词库与素材；Agent 面板全站常驻，跨页面保持同一会话。
 - Codex App 插件：安装后自动注册 MCP 并尝试拉起本地 Agent；Windows 提供 `setup-codex.bat`（一键安装插件）和 `start-agent.bat`（一键启动 Agent）。
-- 提示词库：项目内置 JSON（`public/prompts.json`）提供基础库，支持界面上新建、编辑和删除，用户修改持久化在浏览器本地。
+- 提示词库：项目内置 JSON（`public/prompts.json`）提供基础库（含灵感精选约 30 条），支持界面上新建、编辑和删除，用户修改持久化在浏览器本地；「灵感画廊」按需加载 1,446 条 NanoBanana 热门提示词（CC BY 4.0 © MeiGen.ai），支持搜索、分类筛选和一键收入本地库；提示词编辑器内置「AI 增强」，调用已配置文本模型把简单描述改写为专业结构化提示词。
 - 配置下发：`public/config.json` 提供管理员级模型渠道和 WebDAV 配置，启动时检测变更并自动同步到所有设备，用户自定义渠道独立保存、更新不丢失。
 - 数据与同步：画布、素材、生成记录默认保存在浏览器 IndexedDB（localforage）；支持 WebDAV 浏览器直连双向同步（画布/素材/生图/视频四域），以及腾讯云 COS 本地优先媒体上传队列（自动重试 + 同步中心）。
 
