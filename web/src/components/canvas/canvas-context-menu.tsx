@@ -1,12 +1,34 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
-import { Plus, Trash2 } from "lucide-react";
+import { Check, Plus, Tag, Trash2 } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { imageReferencePurposeLabels } from "@/lib/image-reference-prompt";
 import { useThemeStore } from "@/stores/use-theme-store";
-import type { ContextMenuState } from "@/types/canvas";
+import type { CanvasImageReferencePurpose, ContextMenuState } from "@/types/canvas";
 
-export function CanvasNodeContextMenu({ menu, onClose, onDuplicate, onDelete }: { menu: ContextMenuState; onClose: () => void; onDuplicate: () => void; onDelete: () => void }) {
+const referencePurposeOptions: { value: CanvasImageReferencePurpose | undefined; label: string }[] = [
+    { value: undefined, label: "无" },
+    ...(Object.entries(imageReferencePurposeLabels) as [CanvasImageReferencePurpose, string][]).map(([value, label]) => ({ value, label })),
+];
+
+export function CanvasNodeContextMenu({
+    menu,
+    referencePurpose,
+    showReferencePurpose = false,
+    onClose,
+    onDuplicate,
+    onDelete,
+    onSetReferencePurpose,
+}: {
+    menu: ContextMenuState;
+    referencePurpose?: CanvasImageReferencePurpose;
+    showReferencePurpose?: boolean;
+    onClose: () => void;
+    onDuplicate: () => void;
+    onDelete: () => void;
+    onSetReferencePurpose?: (purpose: CanvasImageReferencePurpose | undefined) => void;
+}) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
 
     useEffect(() => {
@@ -26,6 +48,24 @@ export function CanvasNodeContextMenu({ menu, onClose, onDuplicate, onDelete }: 
             onPointerDown={(event) => event.stopPropagation()}
         >
             {menu.type === "node" ? <MenuButton icon={<Plus className="size-4" />} label="复制" onClick={onDuplicate} /> : null}
+            {menu.type === "node" && showReferencePurpose && onSetReferencePurpose ? (
+                <>
+                    <div className="mx-3 my-1 h-px" style={{ background: theme.toolbar.border }} />
+                    <div className="flex items-center gap-2 px-3 py-1.5 text-xs opacity-50">
+                        <Tag className="size-3.5" />
+                        <span>参考用途</span>
+                    </div>
+                    {referencePurposeOptions.map((option) => (
+                        <MenuButton
+                            key={option.value || "none"}
+                            icon={referencePurpose === option.value ? <Check className="size-4" /> : <span className="size-4" />}
+                            label={option.label}
+                            onClick={() => onSetReferencePurpose(option.value)}
+                        />
+                    ))}
+                    <div className="mx-3 my-1 h-px" style={{ background: theme.toolbar.border }} />
+                </>
+            ) : null}
             <MenuButton icon={<Trash2 className="size-4" />} label="删除" onClick={onDelete} danger />
         </div>
     );

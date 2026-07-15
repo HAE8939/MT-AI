@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import type { PointerEvent as ReactPointerEvent, RefObject, WheelEvent as ReactWheelEvent } from "react";
-import { Modal } from "antd";
-import { Columns2 } from "lucide-react";
+import { Button, Modal } from "antd";
+import { Columns2, Maximize2, Minimize2 } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -21,6 +21,7 @@ export function CanvasNodeCompareDialog({ images, open, onClose }: { images: Arr
     const transformRef = useRef<CompareTransform>({ ...INITIAL_TRANSFORM });
     const dividerPercentRef = useRef(50);
     const dragRef = useRef<DragState>(null);
+    const [fullscreen, setFullscreen] = useState(false);
 
     const applyTransform = useCallback(() => {
         const { scale, x, y } = transformRef.current;
@@ -43,8 +44,38 @@ export function CanvasNodeCompareDialog({ images, open, onClose }: { images: Arr
     }, [applyDivider, applyTransform]);
 
     useEffect(() => {
-        if (open) requestAnimationFrame(resetView);
+        if (open) {
+            setFullscreen(false);
+            requestAnimationFrame(resetView);
+        }
     }, [open, resetView]);
+
+    useEffect(() => {
+        if (!open) return;
+        const onKeyDown = (event: KeyboardEvent) => {
+            if (event.target instanceof HTMLElement && (event.target.tagName === "INPUT" || event.target.tagName === "TEXTAREA" || event.target.isContentEditable)) return;
+            if ((event.key === "f" || event.key === "F") && !event.ctrlKey && !event.metaKey && !event.altKey) {
+                event.preventDefault();
+                setFullscreen((value) => !value);
+                return;
+            }
+            if (event.key === "Escape" && fullscreen) {
+                event.preventDefault();
+                event.stopPropagation();
+                setFullscreen(false);
+            }
+        };
+        window.addEventListener("keydown", onKeyDown, true);
+        return () => window.removeEventListener("keydown", onKeyDown, true);
+    }, [fullscreen, open]);
+
+    useEffect(() => {
+        if (!open) return;
+        requestAnimationFrame(() => {
+            applyTransform();
+            applyDivider(dividerPercentRef.current);
+        });
+    }, [applyDivider, applyTransform, fullscreen, open]);
 
     useEffect(() => {
         if (!open) return;
@@ -108,18 +139,39 @@ export function CanvasNodeCompareDialog({ images, open, onClose }: { images: Arr
 
     return (
         <Modal
-            title="图片对比"
+            title={
+                <div className="flex items-center gap-2 pr-8">
+                    <span>图片对比</span>
+                    <Button
+                        type="text"
+                        size="small"
+                        icon={fullscreen ? <Minimize2 className="size-4" /> : <Maximize2 className="size-4" />}
+                        onClick={() => setFullscreen((value) => !value)}
+                        aria-label={fullscreen ? "退出全屏" : "全屏"}
+                        title={fullscreen ? "退出全屏 (F)" : "全屏 (F)"}
+                    />
+                </div>
+            }
             open={open && images.length === 2}
             onCancel={onClose}
             footer={null}
-            width="calc(100vw - 48px)"
+            width={fullscreen ? "100vw" : "calc(100vw - 48px)"}
             centered
             destroyOnHidden
-            styles={{ body: { padding: 0 } }}
+            style={fullscreen ? { top: 0, maxWidth: "100vw", paddingBottom: 0 } : undefined}
+            styles={
+                fullscreen
+                    ? {
+                          content: { height: "100vh", maxHeight: "100vh", padding: 0, borderRadius: 0, display: "flex", flexDirection: "column" },
+                          header: { padding: "12px 16px", marginBottom: 0 },
+                          body: { padding: 0, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 },
+                      }
+                    : { body: { padding: 0 } }
+            }
         >
             <div
                 ref={viewportRef}
-                className="relative h-[min(78vh,820px)] min-h-[420px] select-none overflow-hidden bg-neutral-950"
+                className={`relative select-none overflow-hidden bg-neutral-950 ${fullscreen ? "min-h-0 flex-1" : "h-[min(78vh,820px)] min-h-[420px]"}`}
                 onPointerDown={startPan}
                 onWheel={handleWheel}
                 onDoubleClick={resetView}

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 
+import { compressImageToMaxSize } from "@/lib/image-compress";
 import { pollBizyAirWorkflow, submitBizyAirWorkflow } from "@/services/api/bizyair-workflows";
 import { imageToDataUrl } from "@/services/image-storage";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
@@ -19,6 +20,7 @@ export function useWorkflowTaskRunner() {
     useEffect(() => {
         if (!hydrated || !canvasHydrated) return;
         tasks.forEach((task) => {
+            if (task.type === "image-generation") return;
             if (!["queued", "submitting", "polling"].includes(task.status) || runningTasks.has(task.id)) return;
             const controller = new AbortController();
             runningTasks.set(task.id, controller);
@@ -50,8 +52,9 @@ async function runTask(task: AiWorkflowTask, signal: AbortSignal) {
         const deadline = Date.now() + POLL_DEADLINE_MS;
         while (!signal.aborted && Date.now() < deadline) {
             const result = await pollBizyAirWorkflow(config, externalTaskId, signal);
-            if (result.status === "succeeded") return taskStore.updateTask(task.id, { status: "succeeded", resultUrls: result.resultUrls });
+            if (result.status === "succeeded") return taskStore.updateTask(task.id, { status: "succeeded", resultUrls: result.resultUrls, progress: 100 });
             if (result.status === "failed") return taskStore.updateTask(task.id, { status: "failed", error: result.error || "任务执行失败" });
+            if (result.progress != null) taskStore.updateTask(task.id, { progress: result.progress });
             await wait(POLL_INTERVAL_MS, signal);
         }
         if (!signal.aborted) taskStore.updateTask(task.id, { status: "failed", error: "任务轮询超时" });
@@ -69,9 +72,13 @@ async function buildWorkflowInput(task: AiWorkflowTask) {
     if (!sourceImage) throw new Error("无法读取源图片");
     if (task.type === "drawing-render") {
         const params = task.params as DrawingRenderParams;
-        const reference = params.referenceNodeId ? project.nodes.find((node) => node.id === params.referenceNodeId) : source;
-        const referenceImage = reference?.metadata?.content ? await imageToDataUrl({ storageKey: reference.metadata.storageKey, url: reference.metadata.content }) : sourceImage;
-        return { type: "drawing-render" as const, sourceImage, referenceImage: referenceImage || sourceImage, params };
+        let referenceImage = params.referenceDataUrl;
+        if (!referenceImage) {
+            const reference = params.referenceNodeId ? project.nodes.find((node) => node.id === params.referenceNodeId) : source;
+            referenceImage = reference?.metadata?.content ? (await imageToDataUrl({ storageKey: reference.metadata.storageKey, url: reference.metadata.content })) || sourceImage : sourceImage;
+        }
+        const [compressedSource, compressedReference] = await Promise.all([compressImageToMaxSize(sourceImage), compressImageToMaxSize(referenceImage)]);
+        return { type: "drawing-render" as const, sourceImage: compressedSource.dataUrl, referenceImage: compressedReference.dataUrl, params };
     }
     if (task.type === "multi-angle") return { type: "multi-angle" as const, sourceImage, params: task.params as MultiAngleParams };
     return { type: "upscale" as const, sourceImage, params: task.params as UpscaleWorkflowParams };

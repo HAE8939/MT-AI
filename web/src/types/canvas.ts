@@ -23,6 +23,7 @@ export enum CanvasNodeType {
 export type CanvasNodeStatus = "idle" | "success" | "loading" | "error";
 export type CanvasGenerationMode = "text" | "image" | "video" | "audio";
 export type CanvasImageGenerationType = "generation" | "edit";
+export type CanvasImageReferencePurpose = "style" | "composition" | "color" | "material";
 
 export type CanvasNodeMetadata = {
     content?: string;
@@ -46,6 +47,12 @@ export type CanvasNodeMetadata = {
     audioSpeed?: string;
     audioInstructions?: string;
     references?: string[];
+    referencePurpose?: CanvasImageReferencePurpose;
+    maskDataUrl?: string;
+    maskRect?: { x: number; y: number; width: number; height: number };
+    maskFeatherRadius?: number;
+    maskRatio?: string;
+    maskSelectionMode?: "brush" | "rectangle";
     naturalWidth?: number;
     naturalHeight?: number;
     freeResize?: boolean;
@@ -63,6 +70,7 @@ export type CanvasNodeMetadata = {
     workflowTaskId?: string;
     workflowType?: AiWorkflowType;
     workflowResultIndex?: number;
+    roleId?: string;
     panoramaProjection?: "equirectangular";
 };
 

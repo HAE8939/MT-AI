@@ -4,7 +4,18 @@ import { nanoid } from "nanoid";
 
 import { localForageStorage } from "@/lib/localforage-storage";
 
-export type AiRole = { id: string; name: string; description: string; systemPrompt: string };
+export type AiRole = { id: string; name: string; description: string; systemPrompt: string; avatar?: string };
+
+export type RoleChatMessage = {
+    id: string;
+    role: "user" | "assistant";
+    text: string;
+    imageCount?: number;
+    error?: boolean;
+    createdAt: number;
+};
+
+export const ROLE_CHAT_HISTORY_MAX = 200;
 
 type RoleStore = {
     hydrated: boolean;
@@ -13,10 +24,13 @@ type RoleStore = {
     userRoles: AiRole[];
     editedRoles: Record<string, AiRole>;
     deletedBuiltInIds: string[];
+    chatHistories: Record<string, RoleChatMessage[]>;
     addRole: (input: Omit<AiRole, "id">) => string;
     updateRole: (id: string, patch: Partial<Omit<AiRole, "id">>) => void;
     removeRole: (id: string) => void;
     restoreBuiltIns: () => void;
+    appendChatMessage: (roleId: string, message: Omit<RoleChatMessage, "id" | "createdAt"> & { id?: string; createdAt?: number }) => string;
+    clearChatHistory: (roleId: string) => void;
 };
 
 function mergeRoles(builtIns: AiRole[], userRoles: AiRole[], edits: Record<string, AiRole>, deletedIds: string[]) {
@@ -43,6 +57,7 @@ export const useRoleStore = create<RoleStore>()(
             userRoles: [],
             editedRoles: {},
             deletedBuiltInIds: [],
+            chatHistories: {},
             addRole: (input) => {
                 const id = `role-${nanoid()}`;
                 const role = { ...input, id };
@@ -58,9 +73,22 @@ export const useRoleStore = create<RoleStore>()(
             }),
             removeRole: (id) => set((state) => {
                 const builtIn = state.builtInRoles.some((item) => item.id === id);
-                return { roles: state.roles.filter((item) => item.id !== id), ...(builtIn ? { deletedBuiltInIds: [...new Set([...state.deletedBuiltInIds, id])] } : { userRoles: state.userRoles.filter((item) => item.id !== id) }) };
+                const { [id]: removedHistory, ...chatHistories } = state.chatHistories;
+                void removedHistory;
+                return { roles: state.roles.filter((item) => item.id !== id), chatHistories, ...(builtIn ? { deletedBuiltInIds: [...new Set([...state.deletedBuiltInIds, id])] } : { userRoles: state.userRoles.filter((item) => item.id !== id) }) };
             }),
             restoreBuiltIns: () => set((state) => ({ deletedBuiltInIds: [], editedRoles: {}, roles: mergeRoles(state.builtInRoles, state.userRoles, {}, []) })),
+            appendChatMessage: (roleId, message) => {
+                const id = message.id || `role-chat-${nanoid()}`;
+                const next: RoleChatMessage = { ...message, id, createdAt: message.createdAt || Date.now() };
+                set((state) => ({ chatHistories: { ...state.chatHistories, [roleId]: [...(state.chatHistories[roleId] || []), next].slice(-ROLE_CHAT_HISTORY_MAX) } }));
+                return id;
+            },
+            clearChatHistory: (roleId) => set((state) => {
+                const { [roleId]: removed, ...chatHistories } = state.chatHistories;
+                void removed;
+                return { chatHistories };
+            }),
         }),
         {
             name: "infinite-canvas:roles",
@@ -72,7 +100,7 @@ export const useRoleStore = create<RoleStore>()(
                 setItem: (name, value) => localForageStorage.setItem(name, JSON.stringify(value)),
                 removeItem: (name) => localForageStorage.removeItem(name),
             } satisfies PersistStorage<RoleStore>,
-            partialize: (state) => ({ userRoles: state.userRoles, editedRoles: state.editedRoles, deletedBuiltInIds: state.deletedBuiltInIds }) as StorageValue<RoleStore>["state"],
+            partialize: (state) => ({ userRoles: state.userRoles, editedRoles: state.editedRoles, deletedBuiltInIds: state.deletedBuiltInIds, chatHistories: state.chatHistories }) as StorageValue<RoleStore>["state"],
             onRehydrateStorage: () => () => {
                 void loadBuiltIns().then((builtInRoles) => {
                     const state = useRoleStore.getState();

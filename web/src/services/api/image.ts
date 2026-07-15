@@ -4,6 +4,7 @@ import { buildApiUrl, resolveModelRequestConfig, type AiConfig, type ModelChanne
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
+import { compositeMaskedRegion, cropDataUrlRect, expandMaskRect, readMaskSelectionRect, binarizeMaskDataUrl } from "@/lib/mask-inpaint";
 import { imageToDataUrl } from "@/services/image-storage";
 import type { ReferenceImage } from "@/types/image";
 
@@ -648,6 +649,33 @@ function parseGeminiImagePayload(payload: GeminiPayload) {
     return images;
 }
 
+/**
+ * Gemini 调用格式的蒙版编辑（局部重绘）：
+ * 按蒙版可编辑区域包围盒外扩边距裁剪选区图 → 连同提示词走 generateContent →
+ * 返回图按蒙版透明度（含羽化渐变）客户端合成回原图对应位置，返回完整尺寸的合成图。
+ */
+async function requestGeminiMaskEdit(config: AiConfig, prompt: string, references: ReferenceImage[], mask: ReferenceImage, count: number, options?: RequestOptions) {
+    const [source, ...extraReferences] = references;
+    if (!source) throw new Error("缺少需要局部重绘的原图");
+    const sourceDataUrl = await imageToDataUrl(source);
+    if (!sourceDataUrl || !sourceDataUrl.startsWith("data:")) throw new Error("读取原图数据失败，无法局部重绘");
+    const selection = await readMaskSelectionRect(mask.dataUrl);
+    if (!selection) throw new Error("蒙版中没有可编辑区域，请先涂抹或框选");
+    const maskSize = { width: selection.maskWidth, height: selection.maskHeight };
+    const region = expandMaskRect(selection.rect, selection.maskWidth, selection.maskHeight);
+    const regionDataUrl = await cropDataUrlRect(sourceDataUrl, region, maskSize);
+    const regionReference: ReferenceImage = { id: `${source.id}-inpaint-region`, name: "inpaint-region.png", type: "image/png", dataUrl: regionDataUrl };
+    const regionPrompt = [
+        "第一张图片是原图中需要局部重绘的目标区域。请基于该区域的构图和内容，按照以下要求重新生成，保持相同的构图与画幅比例，未提及的内容尽量与原区域保持一致。",
+        extraReferences.length ? `请同时参考其余 ${extraReferences.length} 张附加图片的风格、内容和元素，融入到目标区域的重绘中。` : "",
+        prompt,
+    ]
+        .filter(Boolean)
+        .join("\n\n");
+    const generated = await requestGeminiImages({ ...config, size: "auto" }, regionPrompt, [regionReference, ...extraReferences], count, options);
+    return Promise.all(generated.map(async (image) => ({ id: image.id, dataUrl: await compositeMaskedRegion(sourceDataUrl, image.dataUrl, mask.dataUrl, region, maskSize) })));
+}
+
 export async function requestGeneration(config: AiConfig, prompt: string, options?: RequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
@@ -689,8 +717,8 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const requestPrompt = buildImageReferencePromptText(prompt, references);
     if (requestConfig.apiFormat === "gemini") {
-        if (mask) throw new Error("Gemini 调用格式暂不支持蒙版编辑");
         try {
+            if (mask) return await requestGeminiMaskEdit(requestConfig, requestPrompt, references, mask, n, options);
             return await requestGeminiImages(requestConfig, requestPrompt, references, n, options);
         } catch (error) {
             throw new Error(readAxiosError(error, "请求失败"));
@@ -712,7 +740,8 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     }
     const files = await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
     files.forEach((file) => formData.append("image", file));
-    if (mask) formData.set("mask", dataUrlToFile(mask));
+    // 渐变羽化蒙版仅用于 Gemini 客户端合成，images/edits 通道仍传二值蒙版（与原有行为一致）
+    if (mask) formData.set("mask", dataUrlToFile({ ...mask, dataUrl: await binarizeMaskDataUrl(mask.dataUrl) }));
 
     try {
         const response = await axios.post<ImageApiResponse>(aiApiUrl(requestConfig, "/images/edits"), formData, { headers: aiHeaders(requestConfig), signal: options?.signal });

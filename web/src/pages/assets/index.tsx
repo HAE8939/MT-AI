@@ -1,13 +1,14 @@
 import { Copy, Download, PencilLine, Search, Trash2, Upload } from "lucide-react";
-import { useEffect, useMemo, useRef, useState } from "react";
-import { App, Button, Card, Drawer, Empty, Form, Image, Input, Modal, Pagination, Select, Space, Tag, Typography } from "antd";
+import React, { useEffect, useMemo, useRef, useState } from "react";
+import { App, Button, Card, Checkbox, Drawer, Empty, Form, Image, Input, Modal, Pagination, Select, Space, Tag, Typography } from "antd";
 import { saveAs } from "file-saver";
 
 import { useCopyText } from "@/hooks/use-copy-text";
 import { formatBytes, readFileAsDataUrl } from "@/lib/image-utils";
-import { uploadImage } from "@/services/image-storage";
+import { createImageThumbnail, uploadImage } from "@/services/image-storage";
 import { cn } from "@/lib/utils";
 import { useAssetStore, type Asset, type AssetKind, type ImageAsset } from "@/stores/use-asset-store";
+import { collectFilesFromDataTransfer, fileToAssetInput } from "./asset-import";
 import { exportAssets, readAssetPackage } from "./asset-transfer";
 
 type AssetFormValues = {
@@ -18,6 +19,7 @@ type AssetFormValues = {
     source?: string;
     note?: string;
     content?: string;
+    prompt?: string;
 };
 
 type ImageDraft = ImageAsset["data"] | null;
@@ -36,10 +38,13 @@ export default function AssetsPage() {
     const coverInputRef = useRef<HTMLInputElement>(null);
     const imageInputRef = useRef<HTMLInputElement>(null);
     const assetInputRef = useRef<HTMLInputElement>(null);
+    const importInputRef = useRef<HTMLInputElement>(null);
+    const folderInputRef = useRef<HTMLInputElement>(null);
     const assets = useAssetStore((state) => state.assets);
     const addAsset = useAssetStore((state) => state.addAsset);
     const updateAsset = useAssetStore((state) => state.updateAsset);
     const removeAsset = useAssetStore((state) => state.removeAsset);
+    const removeAssets = useAssetStore((state) => state.removeAssets);
     const [keyword, setKeyword] = useState("");
     const [kindFilter, setKindFilter] = useState<AssetKind | "all">("all");
     const [page, setPage] = useState(1);
@@ -50,6 +55,12 @@ export default function AssetsPage() {
     const [deletingAsset, setDeletingAsset] = useState<Asset | null>(null);
     const [formKind, setFormKind] = useState<AssetKind>("text");
     const [imageDraft, setImageDraft] = useState<ImageDraft>(null);
+    const [importing, setImporting] = useState(false);
+    const [dragActive, setDragActive] = useState(false);
+    const [selectMode, setSelectMode] = useState(false);
+    const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+    const [batchDeleteOpen, setBatchDeleteOpen] = useState(false);
+    const dragDepth = useRef(0);
     const coverUrl = Form.useWatch("coverUrl", form) || "";
     const title = Form.useWatch("title", form) || "";
     const tags = Form.useWatch("tags", form) || [];
@@ -79,7 +90,7 @@ export default function AssetsPage() {
         setEditingAsset(null);
         setImageDraft(null);
         setFormKind("text");
-        form.setFieldsValue({ kind: "text", title: "", coverUrl: "", tags: [], source: "手动添加", note: "", content: "" });
+        form.setFieldsValue({ kind: "text", title: "", coverUrl: "", tags: [], source: "手动添加", note: "", content: "", prompt: "" });
         setIsAssetOpen(true);
     };
 
@@ -95,19 +106,21 @@ export default function AssetsPage() {
             source: asset.source,
             note: asset.note,
             content: asset.kind === "text" ? asset.data.content : "",
+            prompt: assetPrompt(asset),
         });
         setIsAssetOpen(true);
     };
 
     const saveAsset = async () => {
         const values = await form.validateFields();
+        const promptValue = values.prompt?.trim();
         const base = {
             title: values.title.trim(),
             coverUrl: values.coverUrl?.trim() || (values.kind === "image" && imageDraft ? imageDraft.dataUrl : ""),
             tags: values.tags || [],
             source: values.source?.trim(),
             note: values.note?.trim(),
-            metadata: editingAsset?.metadata || { source: "manual" },
+            metadata: { ...(editingAsset?.metadata || { source: "manual" }), prompt: promptValue || undefined },
         };
 
         if (values.kind === "text") {
@@ -135,7 +148,8 @@ export default function AssetsPage() {
     const readImageFile = async (file?: File) => {
         if (!file || !file.type.startsWith("image/")) return;
         const image = await uploadImage(file);
-        const draft = { dataUrl: image.url, storageKey: image.storageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType };
+        const thumb = await createImageThumbnail(file, 300);
+        const draft = { dataUrl: image.url, storageKey: image.storageKey, thumbUrl: thumb?.thumbUrl, thumbStorageKey: thumb?.thumbStorageKey, width: image.width, height: image.height, bytes: image.bytes, mimeType: image.mimeType };
         setImageDraft(draft);
         if (!form.getFieldValue("coverUrl")) form.setFieldValue("coverUrl", draft.dataUrl);
         if (!form.getFieldValue("title")) form.setFieldValue("title", file.name);
@@ -144,6 +158,11 @@ export default function AssetsPage() {
     const copyAssetText = async (asset: Asset) => {
         if (asset.kind !== "text") return;
         copyText(asset.data.content, "文本已复制");
+    };
+
+    const copyAssetPrompt = (asset: Asset) => {
+        const prompt = assetPrompt(asset);
+        prompt ? copyText(prompt, "提示词已复制") : message.info("暂无提示词");
     };
 
     const downloadImage = (asset: Asset) => {
@@ -178,6 +197,85 @@ export default function AssetsPage() {
         }
     };
 
+    const importFiles = async (files: File[]) => {
+        const media = files.filter((file) => file.type.startsWith("image/") || file.type.startsWith("video/"));
+        if (!media.length) {
+            if (files.length) message.warning("仅支持导入图片或视频文件");
+            return;
+        }
+        setImporting(true);
+        const hide = message.loading(`正在导入 ${media.length} 个文件…`, 0);
+        let success = 0;
+        for (const file of media) {
+            try {
+                const input = await fileToAssetInput(file);
+                if (input) {
+                    addAsset(input);
+                    success += 1;
+                }
+            } catch {
+                // 单个文件失败不阻塞其余导入
+            }
+        }
+        hide();
+        setImporting(false);
+        const failed = media.length - success;
+        if (success) message.success(failed ? `已导入 ${success} 个文件，${failed} 个失败` : `已导入 ${success} 个文件`);
+        else message.error("导入失败，请检查文件格式");
+    };
+
+    const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        dragDepth.current = 0;
+        setDragActive(false);
+        const files = await collectFilesFromDataTransfer(event.dataTransfer);
+        if (files.length) await importFiles(files);
+    };
+
+    const handleDragEnter = (event: React.DragEvent<HTMLDivElement>) => {
+        if (!Array.from(event.dataTransfer.types || []).includes("Files")) return;
+        event.preventDefault();
+        dragDepth.current += 1;
+        setDragActive(true);
+    };
+
+    const handleDragLeave = (event: React.DragEvent<HTMLDivElement>) => {
+        if (!Array.from(event.dataTransfer.types || []).includes("Files")) return;
+        event.preventDefault();
+        dragDepth.current = Math.max(0, dragDepth.current - 1);
+        if (dragDepth.current === 0) setDragActive(false);
+    };
+
+    const toggleSelectMode = () => {
+        setSelectMode((value) => !value);
+        setSelectedIds(new Set());
+    };
+
+    const toggleSelected = (id: string) => {
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+            next.has(id) ? next.delete(id) : next.add(id);
+            return next;
+        });
+    };
+
+    const selectAllVisible = () => {
+        setSelectedIds((prev) => {
+            const next = new Set(prev);
+            const allSelected = visibleAssets.every((asset) => next.has(asset.id));
+            visibleAssets.forEach((asset) => (allSelected ? next.delete(asset.id) : next.add(asset.id)));
+            return next;
+        });
+    };
+
+    const confirmBatchDelete = () => {
+        removeAssets(Array.from(selectedIds));
+        message.success(`已删除 ${selectedIds.size} 个素材`);
+        setSelectedIds(new Set());
+        setSelectMode(false);
+        setBatchDeleteOpen(false);
+    };
+
     const confirmDelete = () => {
         if (!deletingAsset) return;
         removeAsset(deletingAsset.id);
@@ -191,7 +289,7 @@ export default function AssetsPage() {
                 <div className="pb-8">
                     <div className="mx-auto max-w-5xl text-center">
                         <h1 className="text-4xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">我的素材</h1>
-                        <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">收藏常用文本和图片，按类型、标题和标签快速查找。</p>
+                        <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">收藏常用文本和图片，按类型、标题和标签快速查找。支持批量导入，或直接把图片 / 视频拖入下方列表。</p>
                     </div>
 
                     <div className="mx-auto mt-8 w-full max-w-2xl">
@@ -246,7 +344,33 @@ export default function AssetsPage() {
                                     className="cursor-pointer text-sm font-medium text-stone-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline dark:text-stone-300"
                                     onClick={() => assetInputRef.current?.click()}
                                 >
-                                    导入素材
+                                    导入素材包
+                                </button>
+                                <button
+                                    type="button"
+                                    className="cursor-pointer text-sm font-medium text-stone-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-stone-300"
+                                    disabled={importing}
+                                    onClick={() => importInputRef.current?.click()}
+                                >
+                                    批量导入
+                                </button>
+                                <button
+                                    type="button"
+                                    className="cursor-pointer text-sm font-medium text-stone-700 underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline disabled:cursor-not-allowed disabled:opacity-50 dark:text-stone-300"
+                                    disabled={importing}
+                                    onClick={() => folderInputRef.current?.click()}
+                                >
+                                    导入文件夹
+                                </button>
+                                <button
+                                    type="button"
+                                    className={cn(
+                                        "cursor-pointer text-sm font-medium underline-offset-4 hover:underline focus-visible:outline-none focus-visible:underline",
+                                        selectMode ? "text-blue-600 dark:text-blue-400" : "text-stone-700 dark:text-stone-300",
+                                    )}
+                                    onClick={toggleSelectMode}
+                                >
+                                    {selectMode ? "退出多选" : "多选"}
                                 </button>
                                 <button
                                     type="button"
@@ -261,13 +385,50 @@ export default function AssetsPage() {
                 </div>
 
                 <div className="mx-auto flex max-w-7xl flex-col gap-5">
-                    <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                        {visibleAssets.map((asset) => (
-                            <AssetCard key={asset.id} asset={asset} onOpen={() => setPreviewAsset(asset)} onEdit={() => openEdit(asset)} onCopy={copyAssetText} onDownload={downloadImage} onDelete={() => setDeletingAsset(asset)} />
-                        ))}
-                    </div>
+                    {selectMode ? (
+                        <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-stone-200 bg-stone-50 px-4 py-2.5 dark:border-stone-800 dark:bg-stone-900">
+                            <Space size={12} className="text-sm text-stone-600 dark:text-stone-300">
+                                <span>已选择 {selectedIds.size} 项</span>
+                                <Button size="small" onClick={selectAllVisible}>
+                                    {visibleAssets.length > 0 && visibleAssets.every((asset) => selectedIds.has(asset.id)) ? "取消本页" : "全选本页"}
+                                </Button>
+                            </Space>
+                            <Button size="small" danger disabled={!selectedIds.size} icon={<Trash2 className="size-3.5" />} onClick={() => setBatchDeleteOpen(true)}>
+                                批量删除
+                            </Button>
+                        </div>
+                    ) : null}
 
-                    {!visibleAssets.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到素材" className="py-20" /> : null}
+                    <div
+                        className={cn("relative rounded-xl transition", dragActive && "outline-2 outline-dashed outline-blue-500 outline-offset-4")}
+                        onDragEnter={handleDragEnter}
+                        onDragOver={(event) => event.preventDefault()}
+                        onDragLeave={handleDragLeave}
+                        onDrop={(event) => void handleDrop(event)}
+                    >
+                        <div className="grid gap-5 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                            {visibleAssets.map((asset) => (
+                                <AssetCard
+                                    key={asset.id}
+                                    asset={asset}
+                                    selectMode={selectMode}
+                                    selected={selectedIds.has(asset.id)}
+                                    onToggleSelect={() => toggleSelected(asset.id)}
+                                    onOpen={() => setPreviewAsset(asset)}
+                                    onEdit={() => openEdit(asset)}
+                                    onCopy={copyAssetText}
+                                    onDownload={downloadImage}
+                                    onDelete={() => setDeletingAsset(asset)}
+                                />
+                            ))}
+                        </div>
+
+                        {!visibleAssets.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到素材" className="py-20" /> : null}
+
+                        {dragActive ? (
+                            <div className="pointer-events-none absolute inset-0 flex items-center justify-center rounded-xl bg-blue-500/10 text-sm font-medium text-blue-600 dark:text-blue-300">松开鼠标导入图片 / 视频</div>
+                        ) : null}
+                    </div>
 
                     <div className="flex justify-center">
                         <Pagination
@@ -324,22 +485,45 @@ export default function AssetsPage() {
                                 <Input.TextArea rows={8} placeholder="保存提示词、说明文案、参考描述等文本素材" />
                             </Form.Item>
                         ) : (
-                            <Form.Item label="图片内容" required>
-                                <div className="rounded-lg border border-dashed border-stone-300 p-4 dark:border-stone-700">
-                                    <Button icon={<Upload className="size-4" />} onClick={() => imageInputRef.current?.click()}>
-                                        选择图片文件
-                                    </Button>
-                                    {imageDraft ? (
-                                        <Typography.Text type="secondary" className="ml-3 text-xs">
-                                            {imageDraft.width}x{imageDraft.height} · {formatBytes(imageDraft.bytes)}
-                                        </Typography.Text>
-                                    ) : (
-                                        <Typography.Text type="secondary" className="ml-3 text-xs">
-                                            未选择图片
-                                        </Typography.Text>
-                                    )}
-                                </div>
-                            </Form.Item>
+                            <>
+                                <Form.Item label="图片内容" required>
+                                    <div className="rounded-lg border border-dashed border-stone-300 p-4 dark:border-stone-700">
+                                        <Button icon={<Upload className="size-4" />} onClick={() => imageInputRef.current?.click()}>
+                                            选择图片文件
+                                        </Button>
+                                        {imageDraft ? (
+                                            <Typography.Text type="secondary" className="ml-3 text-xs">
+                                                {imageDraft.width}x{imageDraft.height} · {formatBytes(imageDraft.bytes)}
+                                            </Typography.Text>
+                                        ) : (
+                                            <Typography.Text type="secondary" className="ml-3 text-xs">
+                                                未选择图片
+                                            </Typography.Text>
+                                        )}
+                                    </div>
+                                </Form.Item>
+                                <Form.Item
+                                    name="prompt"
+                                    label={
+                                        <span className="flex items-center gap-2">
+                                            提示词
+                                            <Button
+                                                size="small"
+                                                type="text"
+                                                icon={<Copy className="size-3.5" />}
+                                                onClick={() => {
+                                                    const value = form.getFieldValue("prompt")?.trim();
+                                                    value ? copyText(value, "提示词已复制") : message.info("暂无提示词");
+                                                }}
+                                            >
+                                                复制
+                                            </Button>
+                                        </span>
+                                    }
+                                >
+                                    <Input.TextArea rows={4} placeholder="记录该图片对应的提示词，插入画布时会一并带出" />
+                                </Form.Item>
+                            </>
                         )}
                     </Form>
                     <div className="rounded-xl border border-stone-200 bg-stone-50 p-4 dark:border-stone-800 dark:bg-stone-950">
@@ -391,36 +575,92 @@ export default function AssetsPage() {
                 />
             </Modal>
 
-            <AssetDrawer asset={previewAsset} onClose={() => setPreviewAsset(null)} onCopy={copyAssetText} onDownload={downloadImage} />
+            <AssetDrawer asset={previewAsset} onClose={() => setPreviewAsset(null)} onCopy={copyAssetText} onCopyPrompt={copyAssetPrompt} onDownload={downloadImage} />
 
+            <input
+                ref={importInputRef}
+                type="file"
+                accept="image/*,video/*"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                    const files = Array.from(event.target.files || []);
+                    event.target.value = "";
+                    void importFiles(files);
+                }}
+            />
+            <input
+                ref={(element) => {
+                    folderInputRef.current = element;
+                    element?.setAttribute("webkitdirectory", "");
+                }}
+                type="file"
+                multiple
+                className="hidden"
+                onChange={(event) => {
+                    const files = Array.from(event.target.files || []);
+                    event.target.value = "";
+                    void importFiles(files);
+                }}
+            />
             <input ref={assetInputRef} type="file" accept="application/zip,.zip" className="hidden" onChange={(event) => void importAssetZip(event.target.files?.[0])} />
 
             <Modal title="删除素材" open={Boolean(deletingAsset)} onCancel={() => setDeletingAsset(null)} onOk={confirmDelete} okText="删除" okButtonProps={{ danger: true }} cancelText="取消">
                 确定删除「{deletingAsset?.title}」吗？删除后会从我的素材中移除。
             </Modal>
+
+            <Modal title="批量删除素材" open={batchDeleteOpen} onCancel={() => setBatchDeleteOpen(false)} onOk={confirmBatchDelete} okText="删除" okButtonProps={{ danger: true }} cancelText="取消">
+                确定删除选中的 {selectedIds.size} 个素材吗？删除后无法恢复。
+            </Modal>
         </div>
     );
 }
 
-function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { asset: Asset; onOpen: () => void; onEdit: () => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void; onDelete: () => void }) {
-    const cover = asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "");
+function AssetCard({
+    asset,
+    selectMode,
+    selected,
+    onToggleSelect,
+    onOpen,
+    onEdit,
+    onCopy,
+    onDownload,
+    onDelete,
+}: {
+    asset: Asset;
+    selectMode: boolean;
+    selected: boolean;
+    onToggleSelect: () => void;
+    onOpen: () => void;
+    onEdit: () => void;
+    onCopy: (asset: Asset) => void;
+    onDownload: (asset: Asset) => void;
+    onDelete: () => void;
+}) {
+    const cover = assetThumb(asset) || asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "");
     const summary = assetSummary(asset);
+    const handleCover = () => (selectMode ? onToggleSelect() : onOpen());
     return (
         <Card
             hoverable
-            className="overflow-hidden"
+            className={cn("relative overflow-hidden", selectMode && selected && "ring-2 ring-blue-500")}
             styles={{ body: { padding: 0 } }}
             cover={
-                <button type="button" className="block w-full text-left" onClick={onOpen}>
+                <button type="button" className="block w-full text-left" onClick={handleCover}>
+                    {selectMode ? (
+                        <span className="pointer-events-none absolute left-2 top-2 z-10 flex size-6 items-center justify-center rounded-md bg-white/90 shadow dark:bg-stone-900/90">
+                            <Checkbox checked={selected} />
+                        </span>
+                    ) : null}
                     {cover ? (
-                        <img src={cover} alt={asset.title} className="aspect-[4/3] w-full object-cover" />
+                        <img src={cover} alt={asset.title} className="aspect-[4/3] w-full object-cover" loading="lazy" />
                     ) : (
                         <div className="flex aspect-[4/3] items-center justify-center bg-stone-100 p-5 text-center text-sm leading-6 text-stone-600 dark:bg-stone-900 dark:text-stone-300">{asset.kind === "text" ? asset.data.content : "暂无封面"}</div>
                     )}
                 </button>
             }
         >
-            <button type="button" className="block w-full text-left" onClick={onOpen}>
+            <button type="button" className="block w-full text-left" onClick={handleCover}>
                 <div className="p-4">
                     <div className="flex items-start justify-between gap-3">
                         <div className="min-w-0">
@@ -444,35 +684,38 @@ function AssetCard({ asset, onOpen, onEdit, onCopy, onDownload, onDelete }: { as
                     </div>
                 </div>
             </button>
-            <div className="flex items-center gap-2 px-4 pb-4">
-                <Button size="small" onClick={onOpen}>
-                    查看
-                </Button>
-                {asset.kind !== "video" ? (
-                    <Button size="small" icon={<PencilLine className="size-3.5" />} onClick={onEdit}>
-                        编辑
+            {selectMode ? null : (
+                <div className="flex items-center gap-2 px-4 pb-4">
+                    <Button size="small" onClick={onOpen}>
+                        查看
                     </Button>
-                ) : null}
-                {asset.kind === "text" ? (
-                    <Button size="small" icon={<Copy className="size-3.5" />} onClick={() => void onCopy(asset)}>
-                        复制
+                    {asset.kind !== "video" ? (
+                        <Button size="small" icon={<PencilLine className="size-3.5" />} onClick={onEdit}>
+                            编辑
+                        </Button>
+                    ) : null}
+                    {asset.kind === "text" ? (
+                        <Button size="small" icon={<Copy className="size-3.5" />} onClick={() => void onCopy(asset)}>
+                            复制
+                        </Button>
+                    ) : null}
+                    {asset.kind === "image" || asset.kind === "video" ? (
+                        <Button size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(asset)}>
+                            下载
+                        </Button>
+                    ) : null}
+                    <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={onDelete}>
+                        删除
                     </Button>
-                ) : null}
-                {asset.kind === "image" || asset.kind === "video" ? (
-                    <Button size="small" icon={<Download className="size-3.5" />} onClick={() => onDownload(asset)}>
-                        下载
-                    </Button>
-                ) : null}
-                <Button size="small" danger icon={<Trash2 className="size-3.5" />} onClick={onDelete}>
-                    删除
-                </Button>
-            </div>
+                </div>
+            )}
         </Card>
     );
 }
 
-function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | null; onClose: () => void; onCopy: (asset: Asset) => void; onDownload: (asset: Asset) => void }) {
+function AssetDrawer({ asset, onClose, onCopy, onCopyPrompt, onDownload }: { asset: Asset | null; onClose: () => void; onCopy: (asset: Asset) => void; onCopyPrompt: (asset: Asset) => void; onDownload: (asset: Asset) => void }) {
     const cover = asset ? asset.coverUrl || (asset.kind === "image" ? asset.data.dataUrl : "") : "";
+    const prompt = asset ? assetPrompt(asset) : "";
     return (
         <Drawer title="素材详情" open={Boolean(asset)} size="large" onClose={onClose}>
             {asset ? (
@@ -513,10 +756,23 @@ function AssetDrawer({ asset, onClose, onCopy, onDownload }: { asset: Asset | nu
                             <Typography.Paragraph className="mt-1">{asset.note}</Typography.Paragraph>
                         </div>
                     ) : null}
+                    {prompt ? (
+                        <div className="rounded-lg border border-stone-200 p-4 dark:border-stone-800">
+                            <Typography.Text type="secondary" className="block text-xs">
+                                提示词
+                            </Typography.Text>
+                            <Typography.Paragraph className="mt-2 whitespace-pre-wrap">{prompt}</Typography.Paragraph>
+                        </div>
+                    ) : null}
                     <Space>
                         {asset.kind === "text" ? (
                             <Button type="primary" icon={<Copy className="size-4" />} onClick={() => onCopy(asset)}>
                                 复制文本
+                            </Button>
+                        ) : null}
+                        {prompt ? (
+                            <Button icon={<Copy className="size-4" />} onClick={() => onCopyPrompt(asset)}>
+                                复制提示词
                             </Button>
                         ) : null}
                         {asset.kind === "image" || asset.kind === "video" ? (
@@ -536,6 +792,16 @@ function assetSummary(asset: Asset) {
     return `${asset.data.width}x${asset.data.height} · ${formatBytes(asset.data.bytes)} · ${asset.data.mimeType}`;
 }
 
+function assetThumb(asset: Asset) {
+    if (asset.kind === "image" || asset.kind === "video") return asset.data.thumbUrl || "";
+    return "";
+}
+
+function assetPrompt(asset: Asset) {
+    const prompt = asset.metadata?.prompt;
+    return typeof prompt === "string" ? prompt : "";
+}
+
 function assetSearchText(asset: Asset) {
-    return [asset.title, asset.source || "", asset.note || "", (asset.tags || []).join(" "), asset.kind === "text" ? asset.data.content : asset.data.mimeType].join(" ").toLowerCase();
+    return [asset.title, asset.source || "", asset.note || "", (asset.tags || []).join(" "), assetPrompt(asset), asset.kind === "text" ? asset.data.content : asset.data.mimeType].join(" ").toLowerCase();
 }

@@ -8,7 +8,7 @@ import type { AiWorkflowParams, AiWorkflowTask, AiWorkflowType } from "@/types/a
 type WorkflowTaskStore = {
     hydrated: boolean;
     tasks: AiWorkflowTask[];
-    enqueueTask: (input: { projectId: string; sourceNodeId: string; targetNodeIds: string[]; type: AiWorkflowType; params: AiWorkflowParams }) => string;
+    enqueueTask: (input: { projectId: string; sourceNodeId: string; targetNodeIds: string[]; type: AiWorkflowType; params: AiWorkflowParams; prompt?: string; status?: AiWorkflowTask["status"]; resultUrls?: string[] }) => string;
     updateTask: (id: string, patch: Partial<Omit<AiWorkflowTask, "id" | "createdAt">>) => void;
     cancelTask: (id: string) => void;
     retryTask: (id: string) => void;
@@ -26,12 +26,13 @@ export const useWorkflowTaskStore = create<WorkflowTaskStore>()(
             enqueueTask: (input) => {
                 const id = nanoid();
                 const now = new Date().toISOString();
-                set((state) => ({ tasks: [{ ...input, id, status: "queued", resultUrls: [], createdAt: now, updatedAt: now }, ...state.tasks].slice(0, 100) }));
+                const { status = "queued", resultUrls = [], prompt, ...rest } = input;
+                set((state) => ({ tasks: [{ ...rest, prompt, id, status, resultUrls, createdAt: now, updatedAt: now }, ...state.tasks].slice(0, 100) }));
                 return id;
             },
             updateTask: (id, patch) => set((state) => ({ tasks: state.tasks.map((task) => (task.id === id ? { ...task, ...patch, updatedAt: new Date().toISOString() } : task)) })),
-            cancelTask: (id) => set((state) => ({ tasks: state.tasks.map((task) => (task.id === id && ["queued", "submitting", "polling"].includes(task.status) ? { ...task, status: "cancelled", updatedAt: new Date().toISOString() } : task)) })),
-            retryTask: (id) => set((state) => ({ tasks: state.tasks.map((task) => (task.id === id && task.status === "failed" ? { ...task, status: task.externalTaskId ? "polling" : "queued", error: undefined, updatedAt: new Date().toISOString() } : task)) })),
+            cancelTask: (id) => set((state) => ({ tasks: state.tasks.map((task) => (task.id === id && ["queued", "submitting", "polling", "running"].includes(task.status) ? { ...task, status: "cancelled", updatedAt: new Date().toISOString() } : task)) })),
+            retryTask: (id) => set((state) => ({ tasks: state.tasks.map((task) => (task.id === id && task.status === "failed" && task.type !== "image-generation" ? { ...task, status: task.externalTaskId ? "polling" : "queued", error: undefined, updatedAt: new Date().toISOString() } : task)) })),
             removeTask: (id) => set((state) => ({ tasks: state.tasks.filter((task) => task.id !== id) })),
             clearCompletedTasks: () => set((state) => ({ tasks: state.tasks.filter((task) => !["succeeded", "cancelled"].includes(task.status)) })),
         }),
@@ -46,7 +47,12 @@ export const useWorkflowTaskStore = create<WorkflowTaskStore>()(
                 removeItem: (name) => localForageStorage.removeItem(name),
             } satisfies PersistStorage<WorkflowTaskStore>,
             partialize: (state) => ({ tasks: state.tasks }) as StorageValue<WorkflowTaskStore>["state"],
-            onRehydrateStorage: () => () => useWorkflowTaskStore.setState({ hydrated: true }),
+            onRehydrateStorage: () => () =>
+                useWorkflowTaskStore.setState((state) => ({
+                    hydrated: true,
+                    // 画布生图是轻量登记、非 runner 驱动，刷新后不会恢复，标记为失败避免永久“生成中”
+                    tasks: state.tasks.map((task) => (task.type === "image-generation" && task.status === "running" ? { ...task, status: "failed", error: "生成任务在页面刷新前未完成" } : task)),
+                })),
         },
     ),
 );

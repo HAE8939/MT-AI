@@ -23,17 +23,23 @@ type AssetExportItem = {
 export async function exportAssets(assets: Asset[]) {
     const files: AssetExportItem[] = [];
     const zipFiles: { name: string; data: BlobPart }[] = [];
+    const packed = new Set<string>();
+
+    const packStoredFile = async (storageKey: string | undefined, kind: "image" | "video", fallbackMime: string) => {
+        if (!storageKey || packed.has(storageKey)) return;
+        packed.add(storageKey);
+        const blob = storageKey.startsWith("image:") ? await getImageBlob(storageKey) : await getMediaBlob(storageKey);
+        if (!blob) return;
+        const path = `files/${safeFileName(storageKey)}.${fileExtension(blob.type, kind)}`;
+        files.push({ storageKey, path, mimeType: blob.type || fallbackMime, bytes: blob.size });
+        zipFiles.push({ name: path, data: blob });
+    };
 
     await Promise.all(
         assets.map(async (asset) => {
             if (asset.kind !== "image" && asset.kind !== "video") return;
-            const storageKey = asset.data.storageKey;
-            if (!storageKey) return;
-            const blob = asset.kind === "image" ? await getImageBlob(storageKey) : await getMediaBlob(storageKey);
-            if (!blob) return;
-            const path = `files/${safeFileName(storageKey)}.${fileExtension(blob.type, asset.kind)}`;
-            files.push({ storageKey, path, mimeType: blob.type || asset.data.mimeType, bytes: blob.size });
-            zipFiles.push({ name: path, data: blob });
+            await packStoredFile(asset.data.storageKey, asset.kind, asset.data.mimeType);
+            await packStoredFile(asset.data.thumbStorageKey, "image", "image/jpeg");
         }),
     );
 

@@ -52,6 +52,10 @@ export function removePrompt(id: string) {
     usePromptStore.getState().removePrompt(id);
 }
 
+export function duplicatePrompt(id: string) {
+    return usePromptStore.getState().duplicatePrompt(id);
+}
+
 function filterPrompts(items: Prompt[], options: { keyword: string; category: string; tags?: string[] }) {
     return items.filter((item) => {
         if (isActiveOption(options.category) && item.tags?.includes(options.category) === false) return false;

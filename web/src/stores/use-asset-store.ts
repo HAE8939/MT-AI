@@ -9,8 +9,8 @@ import { enqueueCosUpload } from "@/services/media-sync";
 
 export type AssetKind = "text" | "image" | "video";
 export type TextAsset = AssetBase<"text"> & { data: { content: string } };
-export type ImageAsset = AssetBase<"image"> & { data: { dataUrl: string; storageKey?: string; width: number; height: number; bytes: number; mimeType: string } };
-export type VideoAsset = AssetBase<"video"> & { data: { url: string; storageKey?: string; width: number; height: number; bytes: number; mimeType: string } };
+export type ImageAsset = AssetBase<"image"> & { data: { dataUrl: string; storageKey?: string; thumbUrl?: string; thumbStorageKey?: string; width: number; height: number; bytes: number; mimeType: string } };
+export type VideoAsset = AssetBase<"video"> & { data: { url: string; storageKey?: string; thumbUrl?: string; thumbStorageKey?: string; width: number; height: number; bytes: number; mimeType: string } };
 export type Asset = TextAsset | ImageAsset | VideoAsset;
 
 type AssetBase<T extends AssetKind> = {
@@ -32,6 +32,7 @@ type AssetStore = {
     addAsset: (asset: Omit<Asset, "id" | "createdAt" | "updatedAt">) => string;
     updateAsset: (id: string, patch: Partial<Omit<Asset, "id" | "createdAt">>) => void;
     removeAsset: (id: string) => void;
+    removeAssets: (ids: string[]) => void;
     replaceAssets: (assets: Asset[]) => void;
     cleanupImages: (extra?: unknown) => void;
 };
@@ -45,13 +46,25 @@ const assetStorage: PersistStorage<AssetStore> = {
         const parsed = JSON.parse(value) as StorageValue<AssetStore>;
         parsed.state.assets = await Promise.all(
             parsed.state.assets.map(async (asset) => {
-                if (asset.kind === "video" && asset.data.storageKey) return { ...asset, data: { ...asset.data, url: await resolveMediaUrl(asset.data.storageKey, asset.data.url) } };
+                if (asset.kind === "video" && (asset.data.storageKey || asset.data.thumbStorageKey))
+                    return {
+                        ...asset,
+                        data: {
+                            ...asset.data,
+                            url: asset.data.storageKey ? await resolveMediaUrl(asset.data.storageKey, asset.data.url) : asset.data.url,
+                            thumbUrl: asset.data.thumbStorageKey ? await resolveImageUrl(asset.data.thumbStorageKey, asset.data.thumbUrl) : asset.data.thumbUrl,
+                        },
+                    };
                 if (asset.kind !== "image") return asset;
                 if (asset.data.storageKey)
                     return {
                         ...asset,
                         coverUrl: asset.coverUrl.startsWith("blob:") ? await resolveImageUrl(asset.data.storageKey, asset.coverUrl) : asset.coverUrl,
-                        data: { ...asset.data, dataUrl: await resolveImageUrl(asset.data.storageKey, asset.data.dataUrl) },
+                        data: {
+                            ...asset.data,
+                            dataUrl: await resolveImageUrl(asset.data.storageKey, asset.data.dataUrl),
+                            thumbUrl: asset.data.thumbStorageKey ? await resolveImageUrl(asset.data.thumbStorageKey, asset.data.thumbUrl) : asset.data.thumbUrl,
+                        },
                     };
                 if (!asset.data.dataUrl.startsWith("data:image/")) return asset;
                 const image = await uploadImage(asset.data.dataUrl);
@@ -88,6 +101,13 @@ export const useAssetStore = create<AssetStore>()(
             removeAsset: (id) =>
                 set((state) => {
                     const assets = state.assets.filter((asset) => asset.id !== id);
+                    get().cleanupImages({ assets });
+                    return { assets };
+                }),
+            removeAssets: (ids) =>
+                set((state) => {
+                    const idSet = new Set(ids);
+                    const assets = state.assets.filter((asset) => !idSet.has(asset.id));
                     get().cleanupImages({ assets });
                     return { assets };
                 }),

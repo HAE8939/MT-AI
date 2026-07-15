@@ -2,6 +2,8 @@ import { Copy, FolderPlus, Pencil, Trash2 } from "lucide-react";
 import { Button, Modal, Space, Tag } from "antd";
 
 import { formatPromptDate, type Prompt } from "@/services/api/prompts";
+import { PromptComboBuilder } from "@/components/prompts/prompt-combo-builder";
+import { isComboPrompt } from "@/components/prompts/prompt-combo";
 
 export function PromptDetailDialog({
     prompt,
@@ -20,6 +22,8 @@ export function PromptDetailDialog({
     onEdit?: (prompt: Prompt) => void;
     onDelete?: (prompt: Prompt) => void;
 }) {
+    const combo = prompt ? isComboPrompt(prompt) : false;
+
     return (
         <Modal title={prompt?.title} open={Boolean(prompt)} onCancel={onClose} footer={null} width={860}>
             {prompt ? (
@@ -34,9 +38,11 @@ export function PromptDetailDialog({
                         )}
                     </div>
                     <div className="min-w-0">
-                        {isJsonPrompt ? (
-                            <Tag color="blue" className="mb-2">项目内置</Tag>
-                        ) : null}
+                        <div className="mb-2 flex flex-wrap items-center gap-2">
+                            {isJsonPrompt ? <Tag color="blue" className="m-0">项目内置</Tag> : null}
+                            {prompt.group ? <Tag className="m-0">{prompt.group}</Tag> : null}
+                            {combo ? <Tag color="purple" className="m-0">组合式</Tag> : null}
+                        </div>
                         {prompt.tags.length > 0 && (
                             <div className="flex flex-wrap gap-1.5">
                                 {prompt.tags.map((tag) => (
@@ -46,15 +52,26 @@ export function PromptDetailDialog({
                                 ))}
                             </div>
                         )}
-                        <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-stone-800 dark:text-stone-300">{prompt.prompt}</p>
+                        {combo ? (
+                            <div className="mt-4">
+                                {prompt.prompt.trim() ? (
+                                    <p className="mb-4 whitespace-pre-wrap text-sm leading-7 text-stone-800 dark:text-stone-300">{prompt.prompt}</p>
+                                ) : null}
+                                <PromptComboBuilder prompt={prompt} onCopy={(text) => onCopy(text)} useLabel="复制组合" />
+                            </div>
+                        ) : (
+                            <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-stone-800 dark:text-stone-300">{prompt.prompt}</p>
+                        )}
                         <div className="mt-4 text-xs text-stone-500 dark:text-stone-400">
                             创建：{formatPromptDate(prompt.createdAt)} · 更新：{formatPromptDate(prompt.updatedAt)}
                             {isJsonPrompt ? " · 来自 prompts.json" : null}
                         </div>
                         <Space wrap className="mt-5">
-                            <Button type="primary" icon={<Copy className="size-4" />} onClick={() => onCopy(prompt.prompt)}>
-                                复制提示词
-                            </Button>
+                            {combo ? null : (
+                                <Button type="primary" icon={<Copy className="size-4" />} onClick={() => onCopy(prompt.prompt)}>
+                                    复制提示词
+                                </Button>
+                            )}
                             {onSaveAsset ? (
                                 <Button icon={<FolderPlus className="size-4" />} onClick={() => onSaveAsset(prompt)}>
                                     加入我的素材

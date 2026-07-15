@@ -1,6 +1,6 @@
-import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button, Modal } from "antd";
-import { Check, Lock, LockOpen, X } from "lucide-react";
+import { Check, X } from "lucide-react";
 
 import { readImageMeta } from "@/lib/image-utils";
 
@@ -13,26 +13,43 @@ export type CanvasImageCropRect = {
 
 type DragMode = "move" | "resize";
 type ResizeHandle = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
+type CropPreset = "free" | "1:1" | "4:3" | "3:4" | "16:9" | "9:16";
 
 const handles: ResizeHandle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
+const presets: CropPreset[] = ["free", "1:1", "4:3", "3:4", "16:9", "9:16"];
+const presetLabels: Record<CropPreset, string> = { free: "自由", "1:1": "1:1", "4:3": "4:3", "3:4": "3:4", "16:9": "16:9", "9:16": "9:16" };
 const minSize = 0.06;
 const defaultCrop = { x: 0.12, y: 0.12, width: 0.76, height: 0.76 };
 
 export function CanvasNodeCropDialog({ dataUrl, open, onClose, onConfirm }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (crop: CanvasImageCropRect) => void }) {
     const boxRef = useRef<HTMLDivElement>(null);
     const [crop, setCrop] = useState<CanvasImageCropRect>(defaultCrop);
-    const [locked, setLocked] = useState(false);
+    const [preset, setPreset] = useState<CropPreset>("free");
     const [image, setImage] = useState<{ width: number; height: number } | null>(null);
     const cropSize = image ? { width: Math.max(1, Math.round(crop.width * image.width)), height: Math.max(1, Math.round(crop.height * image.height)) } : null;
 
+    // 归一化高宽比：height_n = width_n * ratioN 时，像素比例等于 preset
+    const ratioN = useMemo(() => presetRatioN(preset, image), [preset, image]);
+
     useEffect(() => {
-        if (open) setCrop(defaultCrop);
+        if (open) {
+            setPreset("free");
+            setCrop(defaultCrop);
+        }
     }, [dataUrl, open]);
 
     useEffect(() => {
         if (!open) return;
         void readImageMeta(dataUrl).then(setImage);
     }, [dataUrl, open]);
+
+    const applyPreset = (next: CropPreset) => {
+        setPreset(next);
+        if (next === "free") return;
+        const nextRatioN = presetRatioN(next, image);
+        if (!nextRatioN) return;
+        setCrop(maxCropForRatio(nextRatioN));
+    };
 
     const startDrag = (mode: DragMode, event: ReactPointerEvent, handle?: ResizeHandle) => {
         const box = boxRef.current?.getBoundingClientRect();
@@ -43,7 +60,7 @@ export function CanvasNodeCropDialog({ dataUrl, open, onClose, onConfirm }: { da
         const move = (event: PointerEvent) => {
             const dx = (event.clientX - start.x) / box.width;
             const dy = (event.clientY - start.y) / box.height;
-            setCrop(mode === "move" ? moveCrop(start.crop, dx, dy) : resizeCrop(start.crop, dx, dy, handle || "se", locked, box));
+            setCrop(mode === "move" ? moveCrop(start.crop, dx, dy) : resizeCrop(start.crop, dx, dy, handle || "se", ratioN));
         };
         const up = () => {
             document.removeEventListener("pointermove", move);
@@ -72,6 +89,14 @@ export function CanvasNodeCropDialog({ dataUrl, open, onClose, onConfirm }: { da
                     </div>
                 </div>
 
+                <div className="flex flex-wrap items-center gap-2">
+                    {presets.map((item) => (
+                        <Button key={item} size="small" type={preset === item ? "primary" : "default"} onClick={() => applyPreset(item)}>
+                            {presetLabels[item]}
+                        </Button>
+                    ))}
+                </div>
+
                 <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border px-3 py-2">
                     <div className="flex flex-wrap items-center gap-3 text-sm opacity-80">
                         <span>裁剪尺寸 {cropSize ? `${cropSize.width} x ${cropSize.height}` : "未知"}</span>
@@ -82,13 +107,10 @@ export function CanvasNodeCropDialog({ dataUrl, open, onClose, onConfirm }: { da
                             </span>
                         ) : null}
                     </div>
-                    <Button icon={locked ? <Lock className="size-4" /> : <LockOpen className="size-4" />} onClick={() => setLocked((value) => !value)}>
-                        {locked ? "锁定比例" : "自由比例"}
-                    </Button>
                 </div>
 
                 <div className="flex items-center justify-end gap-2">
-                    <Button onClick={() => setCrop(defaultCrop)}>重置</Button>
+                    <Button onClick={() => { setPreset("free"); setCrop(defaultCrop); }}>重置</Button>
                     <Button icon={<X className="size-4" />} onClick={onClose}>
                         取消
                     </Button>
@@ -116,8 +138,8 @@ function moveCrop(crop: CanvasImageCropRect, dx: number, dy: number): CanvasImag
     return { ...crop, x: clamp(crop.x + dx, 0, 1 - crop.width), y: clamp(crop.y + dy, 0, 1 - crop.height) };
 }
 
-function resizeCrop(crop: CanvasImageCropRect, dx: number, dy: number, handle: ResizeHandle, locked: boolean, box: DOMRect): CanvasImageCropRect {
-    let next = { ...crop };
+function resizeCrop(crop: CanvasImageCropRect, dx: number, dy: number, handle: ResizeHandle, ratioN: number | null): CanvasImageCropRect {
+    const next = { ...crop };
     if (handle.includes("e")) next.width = crop.width + dx;
     if (handle.includes("s")) next.height = crop.height + dy;
     if (handle.includes("w")) {
@@ -128,18 +150,44 @@ function resizeCrop(crop: CanvasImageCropRect, dx: number, dy: number, handle: R
         next.y = crop.y + dy;
         next.height = crop.height - dy;
     }
-    if (locked) {
-        const size = Math.max(next.width * box.width, next.height * box.height);
-        next.width = size / box.width;
-        next.height = size / box.height;
+    next.width = clamp(next.width, minSize, 1);
+    next.height = clamp(next.height, minSize, 1);
+    if (ratioN) {
+        // 以变化更明显的边为主导，另一边按比例约束
+        const drivenByWidth = handle.includes("e") || handle.includes("w") || (!handle.includes("n") && !handle.includes("s"));
+        if (drivenByWidth) {
+            next.height = clamp(next.width * ratioN, minSize, 1);
+            next.width = next.height / ratioN;
+        } else {
+            next.width = clamp(next.height / ratioN, minSize, 1);
+            next.height = next.width * ratioN;
+        }
         if (handle.includes("w")) next.x = crop.x + crop.width - next.width;
         if (handle.includes("n")) next.y = crop.y + crop.height - next.height;
     }
-    next.width = clamp(next.width, minSize, 1);
-    next.height = clamp(next.height, minSize, 1);
     next.x = clamp(next.x, 0, 1 - next.width);
     next.y = clamp(next.y, 0, 1 - next.height);
     return next;
+}
+
+function maxCropForRatio(ratioN: number): CanvasImageCropRect {
+    // 与 DMDS setCropPreset 一致：按预设比例取最大居中裁剪框
+    let width = 1;
+    let height = ratioN;
+    if (height > 1) {
+        height = 1;
+        width = 1 / ratioN;
+    }
+    return { width, height, x: (1 - width) / 2, y: (1 - height) / 2 };
+}
+
+function presetRatioN(preset: CropPreset, image: { width: number; height: number } | null): number | null {
+    if (preset === "free" || !image) return null;
+    const [w, h] = preset.split(":").map(Number);
+    const pixelRatio = w / h;
+    const imageRatio = image.width / image.height;
+    // 归一化坐标下 height_n = width_n * ratioN 时，像素比例 (width_n*W)/(height_n*H) === pixelRatio
+    return imageRatio / pixelRatio;
 }
 
 function cropStyle(crop: CanvasImageCropRect) {

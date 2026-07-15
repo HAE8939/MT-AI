@@ -1,8 +1,10 @@
-import { Copy, Pencil, Trash2 } from "lucide-react";
-import type { ReactNode } from "react";
+import { Copy, Layers, Pencil, Trash2 } from "lucide-react";
+import type { CSSProperties, ReactNode } from "react";
 import { Button, Card, Tag } from "antd";
 
 import { formatPromptDate, type Prompt } from "@/services/api/prompts";
+import { getPromptColorMeta } from "./prompt-colors";
+import { isComboPrompt } from "./prompt-combo";
 
 export function PromptCard({
     item,
@@ -25,11 +27,17 @@ export function PromptCard({
     actionType?: "text" | "primary";
     extraAction?: ReactNode;
 }) {
+    const colorMeta = getPromptColorMeta(item.color);
+    const combo = isComboPrompt(item);
+    const bodyStyle: CSSProperties = colorMeta
+        ? { padding: 0, backgroundColor: colorMeta.soft, borderTop: `3px solid ${colorMeta.accent}` }
+        : { padding: 0 };
+
     return (
         <Card
             hoverable
             className="overflow-hidden"
-            styles={{ body: { padding: 0 } }}
+            styles={{ body: bodyStyle }}
             cover={
                 item.coverUrl ? (
                     <button type="button" className="block w-full text-left" onClick={onOpen}>
@@ -50,7 +58,14 @@ export function PromptCard({
                         <h2 className="line-clamp-1 text-sm font-semibold text-stone-950 dark:text-stone-100">{item.title}</h2>
                         <span className="shrink-0 text-xs text-stone-400 dark:text-stone-500">{formatPromptDate(item.updatedAt)}</span>
                     </div>
-                    <p className="mt-2 line-clamp-3 text-xs leading-5 text-stone-600 dark:text-stone-400">{item.prompt}</p>
+                    {combo ? (
+                        <p className="mt-2 flex items-center gap-1 text-xs text-stone-500 dark:text-stone-400">
+                            <Layers className="size-3.5" />
+                            组合式 · {item.keys?.length} 个键值组
+                        </p>
+                    ) : (
+                        <p className="mt-2 line-clamp-3 text-xs leading-5 text-stone-600 dark:text-stone-400">{item.prompt}</p>
+                    )}
                     {item.tags.length > 0 && (
                         <div className="mt-3 flex flex-wrap gap-1.5">
                             {item.tags.map((tag) => (

@@ -1,9 +1,32 @@
-import { useEffect, useState } from "react";
-import { Input, Modal, Select } from "antd";
+import { Plus, Trash2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { AutoComplete, Button, Input, Modal, Select, Space } from "antd";
 
 import { addPrompt, updatePrompt, type Prompt } from "@/services/api/prompts";
+import { normalizePromptKeys, PROMPT_COLORS, usePromptStore, type PromptColor, type PromptKeyGroup } from "@/stores/use-prompt-store";
+import { PROMPT_COLOR_META } from "@/components/prompts/prompt-colors";
 
 const { TextArea } = Input;
+
+const UNGROUPED = "";
+
+/** 编辑器内使用的键值组结构，tags 用逗号/换行分隔字符串便于输入 */
+type KeyDraft = { key: string; tagsText: string };
+
+function keysToDrafts(keys?: PromptKeyGroup[]): KeyDraft[] {
+    return (keys || []).map((k) => ({ key: k.key, tagsText: k.tags.join(", ") }));
+}
+
+function draftsToKeys(drafts: KeyDraft[]): PromptKeyGroup[] | undefined {
+    const parsed = drafts.map((d) => ({
+        key: d.key.trim(),
+        tags: d.tagsText
+            .split(/[,，\n]/)
+            .map((t) => t.trim())
+            .filter(Boolean),
+    }));
+    return normalizePromptKeys(parsed);
+}
 
 export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; prompt: Prompt | null; onClose: () => void }) {
     const isEdit = Boolean(prompt);
@@ -11,6 +34,17 @@ export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; p
     const [promptText, setPromptText] = useState("");
     const [tagsInput, setTagsInput] = useState<string[]>([]);
     const [coverUrl, setCoverUrl] = useState("");
+    const [group, setGroup] = useState<string>(UNGROUPED);
+    const [color, setColor] = useState<PromptColor | undefined>(undefined);
+    const [keyDrafts, setKeyDrafts] = useState<KeyDraft[]>([]);
+
+    const prompts = usePromptStore((s) => s.prompts);
+    const storeGroups = usePromptStore((s) => s.groups);
+    const groupOptions = useMemo(() => {
+        const names = new Set<string>(storeGroups);
+        prompts.forEach((p) => p.group && names.add(p.group));
+        return Array.from(names).map((name) => ({ value: name }));
+    }, [prompts, storeGroups]);
 
     useEffect(() => {
         if (open) {
@@ -18,29 +52,81 @@ export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; p
             setPromptText(prompt?.prompt || "");
             setTagsInput(prompt?.tags || []);
             setCoverUrl(prompt?.coverUrl || "");
+            setGroup(prompt?.group || UNGROUPED);
+            setColor(prompt?.color);
+            setKeyDrafts(keysToDrafts(prompt?.keys));
         }
     }, [open, prompt]);
 
+    const addKeyDraft = () => setKeyDrafts((prev) => [...prev, { key: "", tagsText: "" }]);
+    const updateKeyDraft = (index: number, patch: Partial<KeyDraft>) =>
+        setKeyDrafts((prev) => prev.map((d, i) => (i === index ? { ...d, ...patch } : d)));
+    const removeKeyDraft = (index: number) => setKeyDrafts((prev) => prev.filter((_, i) => i !== index));
+
     const handleSave = () => {
-        if (!title.trim() || !promptText.trim()) return;
+        const keys = draftsToKeys(keyDrafts);
+        // 组合式卡片正文可空，只要有 keys；否则要求正文
+        if (!title.trim() || (!promptText.trim() && !keys)) return;
+        const payload = {
+            title: title.trim(),
+            prompt: promptText.trim(),
+            tags: tagsInput,
+            coverUrl,
+            keys,
+            group: group.trim() || undefined,
+            color,
+        };
         if (prompt) {
-            updatePrompt(prompt.id, { title: title.trim(), prompt: promptText.trim(), tags: tagsInput, coverUrl });
+            updatePrompt(prompt.id, payload);
         } else {
-            addPrompt({ title: title.trim(), prompt: promptText.trim(), tags: tagsInput, coverUrl });
+            addPrompt(payload);
         }
         onClose();
     };
 
     return (
-        <Modal title={isEdit ? "编辑提示词" : "新建提示词"} open={open} onCancel={onClose} onOk={handleSave} okText="保存" cancelText="取消" width={640} centered destroyOnClose>
-            <div className="space-y-4 pt-2">
+        <Modal title={isEdit ? "编辑提示词" : "新建提示词"} open={open} onCancel={onClose} onOk={handleSave} okText="保存" cancelText="取消" width={680} centered destroyOnClose>
+            <div className="thin-scrollbar max-h-[70vh] space-y-4 overflow-y-auto pr-1 pt-2">
                 <div>
                     <label className="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300">名称</label>
                     <Input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="给提示词起个名字" />
                 </div>
                 <div>
-                    <label className="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300">提示词内容</label>
+                    <label className="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300">提示词内容{keyDrafts.length > 0 ? "（组合式卡片可留空，作为前置说明）" : ""}</label>
                     <TextArea value={promptText} onChange={(e) => setPromptText(e.target.value)} placeholder="输入提示词正文" autoSize={{ minRows: 4, maxRows: 12 }} />
+                </div>
+                <div className="grid gap-4 sm:grid-cols-2">
+                    <div>
+                        <label className="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300">分组</label>
+                        <AutoComplete
+                            className="w-full"
+                            value={group}
+                            options={groupOptions}
+                            onChange={(value) => setGroup(value)}
+                            placeholder="未分组（可新建或选择）"
+                            allowClear
+                            filterOption={(input, option) => (option?.value ?? "").toLowerCase().includes(input.toLowerCase())}
+                        />
+                    </div>
+                    <div>
+                        <label className="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300">卡片颜色</label>
+                        <Select
+                            className="w-full"
+                            value={color}
+                            onChange={(value) => setColor(value)}
+                            placeholder="默认（无主题色）"
+                            allowClear
+                            options={PROMPT_COLORS.map((c) => ({
+                                value: c,
+                                label: (
+                                    <span className="flex items-center gap-2">
+                                        <span className="inline-block size-3 rounded-full" style={{ backgroundColor: PROMPT_COLOR_META[c].accent }} />
+                                        {PROMPT_COLOR_META[c].label}
+                                    </span>
+                                ),
+                            }))}
+                        />
+                    </div>
                 </div>
                 <div>
                     <label className="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300">标签</label>
@@ -49,6 +135,42 @@ export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; p
                 <div>
                     <label className="mb-1 block text-sm font-medium text-stone-700 dark:text-stone-300">封面图片 URL（可选）</label>
                     <Input value={coverUrl} onChange={(e) => setCoverUrl(e.target.value)} placeholder="https://..." />
+                </div>
+
+                <div className="rounded-lg border border-stone-200 p-3 dark:border-stone-700">
+                    <div className="mb-2 flex items-center justify-between">
+                        <span className="text-sm font-medium text-stone-700 dark:text-stone-300">键值标签组（组合式卡片）</span>
+                        <Button size="small" icon={<Plus className="size-3.5" />} onClick={addKeyDraft}>
+                            添加键
+                        </Button>
+                    </div>
+                    <p className="mb-3 text-xs text-stone-500 dark:text-stone-400">
+                        填写后卡片会渲染为可勾选的键值组合构建器，勾选实时组合成 JSON 提示词。留空则为普通文本卡片。
+                    </p>
+                    {keyDrafts.length === 0 ? (
+                        <div className="text-xs text-stone-400 dark:text-stone-500">暂无键值组</div>
+                    ) : (
+                        <div className="space-y-3">
+                            {keyDrafts.map((draft, index) => (
+                                <div key={index} className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)_auto] sm:items-start">
+                                    <Input
+                                        value={draft.key}
+                                        onChange={(e) => updateKeyDraft(index, { key: e.target.value })}
+                                        placeholder="键名，如 风格"
+                                    />
+                                    <TextArea
+                                        value={draft.tagsText}
+                                        onChange={(e) => updateKeyDraft(index, { tagsText: e.target.value })}
+                                        placeholder="候选值，逗号或换行分隔，如 现代简约, 工业风"
+                                        autoSize={{ minRows: 1, maxRows: 4 }}
+                                    />
+                                    <Space.Compact>
+                                        <Button danger size="small" icon={<Trash2 className="size-3.5" />} onClick={() => removeKeyDraft(index)} />
+                                    </Space.Compact>
+                                </div>
+                            ))}
+                        </div>
+                    )}
                 </div>
             </div>
         </Modal>

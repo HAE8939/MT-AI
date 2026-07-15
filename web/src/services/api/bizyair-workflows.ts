@@ -7,6 +7,8 @@ type BizyAirPayload = {
     status?: string;
     message?: string;
     msg?: string;
+    progress?: number | string;
+    percentage?: number | string;
     error?: string | { message?: string };
     outputs?: Array<{ object_url?: string }>;
     output_values?: Record<string, unknown>;
@@ -87,11 +89,21 @@ function normalizeBizyAirResult(payload: BizyAirPayload, externalTaskId?: string
     const status = String(payload.status || "").toLowerCase();
     const resultUrls = collectResultUrls(payload);
     const error = readError(payload);
+    const progress = readProgress(payload);
     if (error || status === "failed" || status === "error") return { status: "failed", externalTaskId: payload.task_id || externalTaskId, resultUrls, error: error || payload.message || payload.msg || "BizyAir 任务失败" };
     if (resultUrls.length) return { status: "succeeded", externalTaskId: payload.task_id || externalTaskId, resultUrls };
     const taskId = payload.task_id || externalTaskId;
-    if (taskId) return { status: "polling", externalTaskId: taskId, resultUrls: [] };
+    if (taskId) return { status: "polling", externalTaskId: taskId, resultUrls: [], progress };
     return { status: "failed", resultUrls: [], error: payload.message || payload.msg || (status === "success" || status === "succeeded" || status === "completed" ? "BizyAir 任务完成但未返回图片" : "BizyAir 未返回任务 ID 或结果") };
+}
+
+function readProgress(payload: BizyAirPayload) {
+    const raw = payload.progress ?? payload.percentage;
+    if (raw == null) return undefined;
+    const value = typeof raw === "string" ? Number.parseFloat(raw) : raw;
+    if (!Number.isFinite(value)) return undefined;
+    const percent = value > 0 && value <= 1 ? value * 100 : value;
+    return Math.min(100, Math.max(0, Math.round(percent)));
 }
 
 function collectResultUrls(payload: BizyAirPayload) {

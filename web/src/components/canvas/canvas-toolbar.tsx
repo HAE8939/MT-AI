@@ -1,7 +1,7 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useRef, useState } from "react";
 import { Button, Segmented, Switch } from "antd";
-import { CircleDot, Columns2, Eraser, FolderOpen, Grid2x2, Group, Hand, Image as ImageIcon, Info, Moon, Music2, Palette, Redo2, Settings2, Sparkles, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
+import { CircleDot, Columns2, Download, Eraser, FolderOpen, Grid2x2, Group, Hand, Image as ImageIcon, Info, LayoutDashboard, LayoutGrid, Moon, Music2, Palette, Redo2, Settings2, Sparkles, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
 
 import { canvasThemes, type CanvasBackgroundMode, type CanvasColorTheme, type CanvasTheme } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -10,6 +10,7 @@ import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 export function CanvasToolbar({
     selectedCount,
     canCompare,
+    canBatchImages,
     canRunRole,
     canUndo,
     canRedo,
@@ -26,6 +27,9 @@ export function CanvasToolbar({
     onUpload,
     onDelete,
     onCompare,
+    onBatchDownload,
+    onGridMerge,
+    onArrange,
     onRunRole,
     onClear,
     onDeselect,
@@ -35,6 +39,7 @@ export function CanvasToolbar({
 }: {
     selectedCount: number;
     canCompare: boolean;
+    canBatchImages: boolean;
     canRunRole: boolean;
     canUndo: boolean;
     canRedo: boolean;
@@ -51,6 +56,9 @@ export function CanvasToolbar({
     onUpload: () => void;
     onDelete: () => void;
     onCompare: () => void;
+    onBatchDownload: () => void;
+    onGridMerge: () => void;
+    onArrange: () => void;
     onRunRole: () => void;
     onClear: () => void;
     onDeselect: () => void;
@@ -128,6 +136,9 @@ export function CanvasToolbar({
                     <Palette className="size-4.5" />
                 </ToolbarButton>
                 <Divider theme={theme} />
+                <ToolbarButton id="tool-arrange" label="整理画布" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onArrange}>
+                    <LayoutDashboard className="size-4.5" />
+                </ToolbarButton>
                 <ToolbarButton id="tool-role" label={canRunRole ? "专业角色" : "专业角色（请先选择节点）"} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onRunRole}>
                     <Sparkles className="size-4.5" />
                 </ToolbarButton>
@@ -138,6 +149,16 @@ export function CanvasToolbar({
                             <ToolbarButton id="tool-compare" label="对比图片" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onCompare}>
                                 <Columns2 className="size-4.5" />
                             </ToolbarButton>
+                        ) : null}
+                        {canBatchImages ? (
+                            <>
+                                <ToolbarButton id="tool-batch-download" label="批量下载" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onBatchDownload}>
+                                    <Download className="size-4.5" />
+                                </ToolbarButton>
+                                <ToolbarButton id="tool-grid-merge" label="宫格拼合" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onGridMerge}>
+                                    <LayoutGrid className="size-4.5" />
+                                </ToolbarButton>
+                            </>
                         ) : null}
                         <ToolbarButton id="tool-delete" label="删除选中" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onDelete} danger>
                             <Trash2 className="size-4.5" />
@@ -307,7 +328,10 @@ function toolLabel(id: string) {
     if (id === "tool-upload") return "上传素材";
     if (id === "tool-assets") return "我的素材";
     if (id === "tool-style") return "画布外观";
+    if (id === "tool-arrange") return "整理画布";
     if (id === "tool-compare") return "对比图片";
+    if (id === "tool-batch-download") return "批量下载";
+    if (id === "tool-grid-merge") return "宫格拼合";
     if (id === "tool-role") return "专业角色";
     if (id === "tool-delete") return "删除选中";
     if (id === "tool-clear") return "清空画布";
