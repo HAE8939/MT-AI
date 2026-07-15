@@ -4,6 +4,8 @@ import { Link, useLocation } from "react-router-dom";
 
 import { navigationTools, type NavigationToolSlug } from "@/constant/navigation-tools";
 import { AppConfigModal } from "@/components/layout/app-config-modal";
+import { WorkflowTaskCenter } from "@/components/layout/workflow-task-drawer";
+import { CosUploadCenter } from "@/components/layout/cos-upload-drawer";
 import { MobileNavDrawer } from "@/components/layout/mobile-nav-drawer";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
 import { cn } from "@/lib/utils";
@@ -82,6 +84,8 @@ export function AppTopNav() {
                         </div>
 
                         <div className="my-auto flex h-9 min-w-0 items-center justify-end gap-2 justify-self-end whitespace-nowrap">
+                            <CosUploadCenter />
+                            <WorkflowTaskCenter />
                             <CodexStatusButton />
                             <Tooltip title={panelOpen ? "收起 Agent" : "打开 Agent"}>
                                 <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" icon={<Bot className="size-4" />} onClick={togglePanel} aria-label="打开 Agent" />

@@ -1,11 +1,12 @@
 import { App, Button, Form, Input, Modal, Progress, Select, Switch, Tabs } from "antd";
-import { CircleAlert, Cloud, KeyRound, Link2, Plus, RefreshCw, ShieldCheck, Trash2, Wifi } from "lucide-react";
+import { CircleAlert, Cloud, CloudUpload, KeyRound, Link2, Plus, RefreshCw, ShieldCheck, Sparkles, Trash2, Wifi } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
 import { fetchChannelModels } from "@/services/api/image";
 import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
 import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
+import { testCosConnection } from "@/services/api/cos-media";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { createModelChannel, defaultBaseUrlForApiFormat, filterModelsByCapability, modelOptionLabel, modelOptionsFromChannels, normalizeModelOptionValue, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
@@ -67,13 +68,18 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const [activeTab, setActiveTab] = useState<ConfigTabKey>(initialTab);
     const [loadingChannelId, setLoadingChannelId] = useState("");
     const [testingWebdav, setTestingWebdav] = useState(false);
+    const [testingCos, setTestingCos] = useState(false);
     const [syncingWebdav, setSyncingWebdav] = useState(false);
     const [webdavSyncStatus, setWebdavSyncStatus] = useState("");
     const [webdavDomainProgress, setWebdavDomainProgress] = useState(createWebdavDomainProgress);
     const config = useConfigStore((state) => state.config);
     const webdav = useConfigStore((state) => state.webdav);
+    const workflowConfig = useConfigStore((state) => state.workflowConfig);
+    const cosConfig = useConfigStore((state) => state.cosConfig);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const updateWebdavConfig = useConfigStore((state) => state.updateWebdavConfig);
+    const updateBizyAirConfig = useConfigStore((state) => state.updateBizyAirConfig);
+    const updateCosConfig = useConfigStore((state) => state.updateCosConfig);
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
@@ -89,6 +95,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const disconnectAgent = useAgentStore((state) => state.disconnectAgent);
     const modelOptions = config.models.map((model) => ({ label: modelOptionLabel(config, model), value: model }));
     const webdavReady = Boolean(webdav.url.trim());
+    const cosReady = Boolean(cosConfig.secretId.trim() && cosConfig.secretKey.trim() && cosConfig.bucket.trim() && cosConfig.region.trim());
     useEffect(() => setActiveTab(initialTab), [initialTab]);
 
     const saveConfig = (nextConfig: AiConfig) => {
@@ -101,6 +108,18 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         if (!ready) return;
         message.success(shouldPromptContinue ? "配置已保存，请继续刚才的请求" : "配置已保存");
         clearPromptContinue();
+    };
+
+    const testCos = async () => {
+        setTestingCos(true);
+        try {
+            const result = await testCosConnection(cosConfig);
+            message.success(result.cleanupWarning ? `COS 上传成功；${result.cleanupWarning}` : "COS 连接成功");
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "COS 连接失败");
+        } finally {
+            setTestingCos(false);
+        }
     };
 
     const updateChannels = (channels: ModelChannel[]) => {
@@ -376,6 +395,78 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                 <Form.Item label="系统提示词" className="mb-0">
                                     <Input.TextArea rows={4} value={config.systemPrompt} placeholder="例如：你是一位擅长电影感写实摄影的视觉导演。" onChange={(event) => updateConfig("systemPrompt", event.target.value)} />
                                 </Form.Item>
+                            </Form>
+                        ),
+                    },
+                    {
+                        key: "workflows",
+                        label: "专业工作流",
+                        children: (
+                            <Form layout="vertical" requiredMark={false}>
+                                <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                                    <div className="mb-3 flex items-start gap-2">
+                                        <Sparkles className="mt-0.5 size-4 text-stone-500" />
+                                        <div>
+                                            <div className="text-sm font-semibold">BizyAir 专业工作流</div>
+                                            <div className="mt-1 text-xs leading-5 text-stone-500">仅用于图纸渲染、双相机多角度和 AI 超分，不改变 OpenAI / Gemini 模型渠道。</div>
+                                        </div>
+                                    </div>
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                        <Form.Item label="Base URL" className="mb-0">
+                                            <Input value={workflowConfig.bizyair.baseUrl} placeholder="https://api.bizyair.cn" onChange={(event) => updateBizyAirConfig("baseUrl", event.target.value)} />
+                                        </Form.Item>
+                                        <Form.Item label="API Key" className="mb-0">
+                                            <Input.Password value={workflowConfig.bizyair.apiKey} onChange={(event) => updateBizyAirConfig("apiKey", event.target.value)} />
+                                        </Form.Item>
+                                    </div>
+                                    <div className="mt-3 rounded-md bg-stone-100 px-3 py-2 text-xs leading-5 text-stone-500 dark:bg-stone-900">密钥只保存在当前浏览器配置中，不写入画布 JSON、任务记录或 WebDAV 同步数据。</div>
+                                </section>
+                            </Form>
+                        ),
+                    },
+                    {
+                        key: "cos",
+                        label: "腾讯云 COS",
+                        children: (
+                            <Form layout="vertical" requiredMark={false}>
+                                <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                                    <div className="mb-4 flex flex-wrap items-start justify-between gap-3">
+                                        <div className="flex items-start gap-2">
+                                            <CloudUpload className="mt-0.5 size-4 text-stone-500" />
+                                            <div>
+                                                <div className="text-sm font-semibold">腾讯云 COS 媒体存储</div>
+                                                <div className="mt-1 text-xs leading-5 text-stone-500">图片、视频、生成结果和素材先保存在本地，再同步到 COS。</div>
+                                            </div>
+                                        </div>
+                                        <Switch checked={cosConfig.enabled} checkedChildren="已启用" unCheckedChildren="已停用" onChange={(enabled) => updateCosConfig("enabled", enabled)} />
+                                    </div>
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                        <Form.Item label="SecretId" className="mb-0">
+                                            <Input value={cosConfig.secretId} onChange={(event) => updateCosConfig("secretId", event.target.value)} />
+                                        </Form.Item>
+                                        <Form.Item label="SecretKey" className="mb-0">
+                                            <Input.Password value={cosConfig.secretKey} onChange={(event) => updateCosConfig("secretKey", event.target.value)} />
+                                        </Form.Item>
+                                        <Form.Item label="Bucket" className="mb-0">
+                                            <Input value={cosConfig.bucket} placeholder="example-1250000000" onChange={(event) => updateCosConfig("bucket", event.target.value)} />
+                                        </Form.Item>
+                                        <Form.Item label="Region" className="mb-0">
+                                            <Input value={cosConfig.region} placeholder="ap-guangzhou" onChange={(event) => updateCosConfig("region", event.target.value)} />
+                                        </Form.Item>
+                                        <Form.Item label="公网访问域名" className="mb-0">
+                                            <Input value={cosConfig.publicBaseUrl} placeholder="留空时使用 COS 默认域名" onChange={(event) => updateCosConfig("publicBaseUrl", event.target.value)} />
+                                        </Form.Item>
+                                        <Form.Item label="对象前缀" className="mb-0">
+                                            <Input value={cosConfig.objectPrefix} placeholder="infinite-canvas" onChange={(event) => updateCosConfig("objectPrefix", event.target.value)} />
+                                        </Form.Item>
+                                    </div>
+                                    <div className="mt-4 flex items-center justify-between gap-3">
+                                        <div className="text-xs leading-5 text-stone-500">修改配置后，失败的媒体任务可在同步中心使用新密钥重试。</div>
+                                        <Button icon={<Wifi className="size-4" />} loading={testingCos} disabled={!cosConfig.enabled || !cosReady} onClick={() => void testCos()}>
+                                            测试连接
+                                        </Button>
+                                    </div>
+                                </section>
                             </Form>
                         ),
                     },

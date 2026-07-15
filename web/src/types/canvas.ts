@@ -1,3 +1,5 @@
+import type { AiWorkflowType } from "@/types/ai-workflow";
+
 export type Position = {
     x: number;
     y: number;
@@ -58,6 +60,10 @@ export type CanvasNodeMetadata = {
     bytes?: number;
     durationMs?: number;
     groupId?: string;
+    workflowTaskId?: string;
+    workflowType?: AiWorkflowType;
+    workflowResultIndex?: number;
+    panoramaProjection?: "equirectangular";
 };
 
 export type CanvasNodeData = {

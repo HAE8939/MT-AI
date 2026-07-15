@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
-import { Button, Input, Modal, Slider } from "antd";
-import { Brush, Eraser, RotateCcw, WandSparkles, X } from "lucide-react";
+import { Button, Input, Modal, Segmented, Select, Slider } from "antd";
+import { Brush, Eraser, RectangleHorizontal, RotateCcw, WandSparkles, X } from "lucide-react";
 
 import { readImageMeta } from "@/lib/image-utils";
 
 export type CanvasImageMaskEditPayload = {
     prompt: string;
     maskDataUrl: string;
+    referenceNodeIds: string[];
 };
 
 type DrawMode = "paint" | "erase";
@@ -15,14 +16,19 @@ const defaultBrushSize = 100;
 const maskFillColor = "rgba(37, 99, 235, .38)";
 const maskBorderColor = "rgba(255, 255, 255, .72)";
 
-export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (payload: CanvasImageMaskEditPayload) => void }) {
+export function CanvasNodeMaskEditDialog({ dataUrl, imageOptions = [], open, onClose, onConfirm }: { dataUrl: string; imageOptions?: Array<{ label: string; value: string }>; open: boolean; onClose: () => void; onConfirm: (payload: CanvasImageMaskEditPayload) => void }) {
     const maskCanvasRef = useRef<HTMLCanvasElement>(null);
     const previewCanvasRef = useRef<HTMLCanvasElement>(null);
     const drawingRef = useRef<{ active: boolean; last: { x: number; y: number } | null }>({ active: false, last: null });
+    const rectangleStartRef = useRef<{ x: number; y: number } | null>(null);
     const [image, setImage] = useState<{ width: number; height: number } | null>(null);
     const [prompt, setPrompt] = useState("");
     const [brushSize, setBrushSize] = useState(defaultBrushSize);
     const [mode, setMode] = useState<DrawMode>("paint");
+    const [selectionMode, setSelectionMode] = useState<"brush" | "rectangle">("brush");
+    const [ratio, setRatio] = useState<"free" | "1:1" | "16:9" | "9:16">("free");
+    const [featherRadius, setFeatherRadius] = useState(5);
+    const [referenceNodeIds, setReferenceNodeIds] = useState<string[]>([]);
     const [error, setError] = useState("");
 
     useEffect(() => {
@@ -30,6 +36,10 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
         setPrompt("");
         setBrushSize(defaultBrushSize);
         setMode("paint");
+        setSelectionMode("brush");
+        setRatio("free");
+        setFeatherRadius(5);
+        setReferenceNodeIds([]);
         setError("");
         void readImageMeta(dataUrl).then(setImage);
     }, [dataUrl, open]);
@@ -66,18 +76,36 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
         event.preventDefault();
         event.stopPropagation();
         event.currentTarget.setPointerCapture(event.pointerId);
+        if (selectionMode === "rectangle") {
+            rectangleStartRef.current = readCanvasPoint(event.currentTarget, event.clientX, event.clientY);
+            clearCanvas(maskCanvasRef.current);
+            clearCanvas(previewCanvasRef.current);
+            return;
+        }
         drawingRef.current = { active: true, last: null };
         if (maskCanvasRef.current) renderMaskPreview(maskCanvasRef.current, previewCanvasRef.current);
         draw(event);
     };
 
     const moveDraw = (event: ReactPointerEvent<HTMLCanvasElement>) => {
+        if (selectionMode === "rectangle" && rectangleStartRef.current) {
+            const canvas = maskCanvasRef.current;
+            const context = canvas?.getContext("2d");
+            if (!canvas || !context) return;
+            const end = readCanvasPoint(event.currentTarget, event.clientX, event.clientY);
+            clearCanvas(canvas);
+            drawRectangleMask(context, rectangleStartRef.current, end, ratio);
+            renderMaskPreview(canvas, previewCanvasRef.current, true);
+            setError("");
+            return;
+        }
         if (!drawingRef.current.active) return;
         event.preventDefault();
         draw(event);
     };
 
     const stopDraw = () => {
+        rectangleStartRef.current = null;
         drawingRef.current = { active: false, last: null };
         const maskCanvas = maskCanvasRef.current;
         if (maskCanvas) renderMaskPreview(maskCanvas, previewCanvasRef.current, canvasHasPaint(maskCanvas));
@@ -95,7 +123,7 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
         if (!nextPrompt) return setError("请输入修改要求");
         if (!canvas) return;
         if (!canvasHasPaint(canvas)) return setError("请先涂抹局部区域");
-        onConfirm({ prompt: nextPrompt, maskDataUrl: buildEditMask(canvas) });
+        onConfirm({ prompt: nextPrompt, maskDataUrl: buildEditMask(canvas, featherRadius), referenceNodeIds });
     };
 
     return (
@@ -129,21 +157,30 @@ export function CanvasNodeMaskEditDialog({ dataUrl, open, onClose, onConfirm }: 
                     </div>
 
                     <div className="grid grid-cols-2 gap-2">
+                        <Button type={selectionMode === "brush" ? "primary" : "default"} icon={<Brush className="size-4" />} onClick={() => setSelectionMode("brush")}>画笔选择</Button>
+                        <Button type={selectionMode === "rectangle" ? "primary" : "default"} icon={<RectangleHorizontal className="size-4" />} onClick={() => setSelectionMode("rectangle")}>矩形选择</Button>
+                    </div>
+
+                    {selectionMode === "brush" ? <div className="grid grid-cols-2 gap-2">
                         <Button type={mode === "paint" ? "primary" : "default"} icon={<Brush className="size-4" />} onClick={() => setMode("paint")}>
                             画笔
                         </Button>
                         <Button type={mode === "erase" ? "primary" : "default"} icon={<Eraser className="size-4" />} onClick={() => setMode("erase")}>
                             擦除
                         </Button>
-                    </div>
+                    </div> : <Segmented block value={ratio} options={[{ label: "自由", value: "free" }, { label: "1:1", value: "1:1" }, { label: "16:9", value: "16:9" }, { label: "9:16", value: "9:16" }]} onChange={(value) => setRatio(value as typeof ratio)} />}
 
-                    <div className="space-y-2">
+                    {selectionMode === "brush" ? <div className="space-y-2">
                         <div className="flex items-center justify-between text-sm">
                             <span className="font-medium opacity-75">笔刷大小</span>
                             <span className="font-semibold">{brushSize}px</span>
                         </div>
                         <Slider min={8} max={160} step={2} value={brushSize} onChange={setBrushSize} />
-                    </div>
+                    </div> : null}
+
+                    <div className="space-y-2"><div className="flex items-center justify-between text-sm"><span className="font-medium opacity-75">羽化半径</span><span className="font-semibold">{featherRadius}px</span></div><Slider min={0} max={40} step={1} value={featherRadius} onChange={setFeatherRadius} /></div>
+
+                    <Select mode="multiple" allowClear maxTagCount="responsive" placeholder="附加风格参考图（可选）" value={referenceNodeIds} options={imageOptions} onChange={setReferenceNodeIds} />
 
                     <div className="space-y-2">
                         <div className="text-sm font-medium opacity-75">修改要求</div>
@@ -257,13 +294,21 @@ function isMaskEdge(data: Uint8ClampedArray, width: number, x: number, y: number
     return data[((y - step) * width + x) * 4 + 3] === 0 || data[((y + step) * width + x) * 4 + 3] === 0 || data[(y * width + x - step) * 4 + 3] === 0 || data[(y * width + x + step) * 4 + 3] === 0;
 }
 
-function buildEditMask(selectionCanvas: HTMLCanvasElement) {
+function buildEditMask(selectionCanvas: HTMLCanvasElement, featherRadius: number) {
     const canvas = document.createElement("canvas");
     canvas.width = selectionCanvas.width;
     canvas.height = selectionCanvas.height;
     const context = canvas.getContext("2d");
     if (!context) return selectionCanvas.toDataURL("image/png");
-    const selectionContext = selectionCanvas.getContext("2d");
+    const blurredSelection = document.createElement("canvas");
+    blurredSelection.width = selectionCanvas.width;
+    blurredSelection.height = selectionCanvas.height;
+    const blurredContext = blurredSelection.getContext("2d");
+    if (blurredContext) {
+        blurredContext.filter = featherRadius ? `blur(${featherRadius}px)` : "none";
+        blurredContext.drawImage(selectionCanvas, 0, 0);
+    }
+    const selectionContext = blurredSelection.getContext("2d");
     context.fillStyle = "#fff";
     context.fillRect(0, 0, canvas.width, canvas.height);
     if (!selectionContext) return canvas.toDataURL("image/png");
@@ -274,4 +319,18 @@ function buildEditMask(selectionCanvas: HTMLCanvasElement) {
     }
     context.putImageData(mask, 0, 0);
     return canvas.toDataURL("image/png");
+}
+
+function drawRectangleMask(context: CanvasRenderingContext2D, start: { x: number; y: number }, end: { x: number; y: number }, ratio: "free" | "1:1" | "16:9" | "9:16") {
+    let width = end.x - start.x;
+    let height = end.y - start.y;
+    const targetRatio = ratio === "1:1" ? 1 : ratio === "16:9" ? 16 / 9 : ratio === "9:16" ? 9 / 16 : null;
+    if (targetRatio) {
+        const signX = Math.sign(width) || 1;
+        const signY = Math.sign(height) || 1;
+        if (Math.abs(width / (height || 1)) > targetRatio) height = signY * Math.abs(width) / targetRatio;
+        else width = signX * Math.abs(height) * targetRatio;
+    }
+    context.fillStyle = "#000";
+    context.fillRect(start.x, start.y, width, height);
 }

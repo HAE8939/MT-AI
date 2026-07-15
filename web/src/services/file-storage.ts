@@ -1,19 +1,27 @@
 import localforage from "localforage";
 import { nanoid } from "nanoid";
+import { enqueueCosUpload } from "@/services/media-sync";
+import { useCosUploadStore } from "@/stores/use-cos-upload-store";
+import type { CosMediaKind } from "@/types/cos-media";
 
-export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number; durationMs?: number };
+export type UploadedFile = { url: string; storageKey: string; bytes: number; mimeType: string; width?: number; height?: number; durationMs?: number; cosTaskId?: string };
+type MediaUploadOptions = { kind?: CosMediaKind; fileName?: string; enqueueCos?: boolean };
 
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "media_files" });
 const objectUrls = new Map<string, string>();
 
-export async function uploadMediaFile(input: string | Blob, prefix = "file"): Promise<UploadedFile> {
+export async function uploadMediaFile(input: string | Blob, prefix = "file", options: MediaUploadOptions = {}): Promise<UploadedFile> {
     const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
     const storageKey = `${prefix}:${nanoid()}`;
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     const meta = blob.type.startsWith("video/") ? await readVideoMeta(url) : blob.type.startsWith("audio/") ? await readAudioMeta(url) : {};
-    return { url, storageKey, bytes: blob.size, mimeType: blob.type || "application/octet-stream", ...meta };
+    const mimeType = blob.type || "application/octet-stream";
+    const shouldEnqueue = options.enqueueCos !== false && !mimeType.startsWith("audio/");
+    const kind = options.kind || (mimeType.startsWith("video/") ? "videos" : "assets");
+    const cosTaskId = shouldEnqueue ? enqueueCosUpload({ storageKey, fileName: options.fileName || `media.${mimeExtension(mimeType)}`, mimeType, mediaKind: kind }) : undefined;
+    return { url, storageKey, bytes: blob.size, mimeType, ...meta, cosTaskId };
 }
 
 export async function resolveMediaUrl(storageKey?: string, fallback = "") {
@@ -35,6 +43,7 @@ export async function setMediaBlob(storageKey: string, blob: Blob) {
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
+    if (!blob.type.startsWith("audio/")) enqueueCosUpload({ storageKey, fileName: `media.${mimeExtension(blob.type || "application/octet-stream")}`, mimeType: blob.type || "application/octet-stream", mediaKind: blob.type.startsWith("video/") ? "videos" : "assets" });
     return url;
 }
 
@@ -44,9 +53,15 @@ export async function deleteStoredMedia(keys: Iterable<string>) {
             const url = objectUrls.get(key);
             if (url) URL.revokeObjectURL(url);
             objectUrls.delete(key);
+            useCosUploadStore.getState().cancelByStorageKey(key);
             await store.removeItem(key);
         }),
     );
+}
+
+function mimeExtension(mimeType: string) {
+    if (mimeType === "video/quicktime") return "mov";
+    return mimeType.split("/")[1] || "bin";
 }
 
 export async function cleanupUnusedMedia(usedData: unknown) {

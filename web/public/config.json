@@ -1,0 +1,37 @@
+{
+    "channels": [
+        {
+            "id": "default",
+            "name": "阿拉神灯",
+            "baseUrl": "https://api.vectorengine.cn/v1",
+            "apiKey": "REDACTED_API_KEY",
+            "apiFormat": "openai",
+            "models": ["gemini-3.5-flash", "gemini-3.1-flash-image", "gemini-3.1-flash-tts-preview", "gpt-image-2", "gpt-5.5", "kling-video", "speech-2.8-hd"]
+        }
+    ],
+    "model": "default::gemini-3.5-flash",
+    "imageModel": "default::gpt-image-2",
+    "videoModel": "default::kling-video",
+    "textModel": "default::gemini-3.5-flash",
+    "audioModel": "default::speech-2.8-hd",
+    "quality": "auto",
+    "size": "1:1",
+    "count": "1",
+    "canvasImageCount": "3",
+    "audioVoice": "alloy",
+    "audioFormat": "mp3",
+    "audioSpeed": "1",
+    "audioInstructions": "",
+    "videoSeconds": "6",
+    "vquality": "720",
+    "videoGenerateAudio": "true",
+    "videoWatermark": "false",
+    "systemPrompt": "",
+    "webdav": {
+        "url": "/webdav-proxy",
+        "username": "REDACTED_USERNAME",
+        "password": "REDACTED_PASSWORD",
+        "directory": "infinite-canvas",
+        "lastSyncedAt": ""
+    }
+}

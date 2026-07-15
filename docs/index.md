@@ -3,6 +3,7 @@
 ## 项目介绍
 
 - [快速开始](/docs/overview/quick-start)
+- [Codex 能力清单](/docs/overview/codex-capabilities)
 - [功能介绍](/docs/overview/features)
 - [Render 部署](/docs/overview/render)
 - [Docker 部署](/docs/overview/docker)
@@ -12,6 +13,11 @@
 
 - [画布节点操作手册](/docs/canvas/canvas-node-manual)
 - [画布快捷键](/docs/canvas/canvas-shortcuts)
+
+## 配置指南
+
+- [Codex Desktop 适配](/docs/setup/codex-desktop-setup)
+- [手动配置 Codex](/docs/setup/manual-codex-config)
 
 ## 开发与数据
 

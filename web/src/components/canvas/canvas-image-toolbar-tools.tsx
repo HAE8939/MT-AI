@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
-import { Brush, Camera, Copy, FileText, Grid2x2, Lock, LockOpen, Maximize2, Scissors, Sparkles, Upload, ZoomIn } from "lucide-react";
+import { Brush, Building2, Camera, Copy, FileText, Grid2x2, Lock, LockOpen, Maximize2, Pencil, ScanLine, Scissors, Sparkles, Upload, View, ZoomIn } from "lucide-react";
 
 import type { CanvasNodeData } from "@/types/canvas";
 
-export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "view";
+export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "annotate" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "drawingRender" | "panoramaGenerate" | "panorama" | "view";
 export type ImageQuickToolId = "info" | "delete" | "saveAsset" | "download" | "edit" | ImageNodeActionToolId;
 
 export type ImageToolHandlers = {
@@ -15,6 +15,10 @@ export type ImageToolHandlers = {
     onUpscale: (node: CanvasNodeData) => void;
     onSuperResolve: (node: CanvasNodeData) => void;
     onAngle: (node: CanvasNodeData) => void;
+    onPanorama: (node: CanvasNodeData) => void;
+    onPanoramaGenerate: (node: CanvasNodeData) => void;
+    onDrawingRender: (node: CanvasNodeData) => void;
+    onAnnotate: (node: CanvasNodeData) => void;
     onViewImage: (node: CanvasNodeData) => void;
     onCopyPrompt: (node: CanvasNodeData) => void;
     onReversePrompt: (node: CanvasNodeData) => void;
@@ -79,6 +83,15 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
         run: (node, handlers) => handlers.onToggleFreeResize(node),
     },
     {
+        id: "annotate",
+        defaultVisible: false,
+        panelLabel: "图片标注",
+        label: "标注",
+        title: "添加画笔、箭头、文字等标注",
+        icon: () => <Pencil className="size-4" />,
+        run: (node, handlers) => handlers.onAnnotate(node),
+    },
+    {
         id: "maskEdit",
         defaultVisible: true,
         panelLabel: "局部编辑",
@@ -131,6 +144,33 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
         title: "生成角度",
         icon: () => <Camera className="size-4" />,
         run: (node, handlers) => handlers.onAngle(node),
+    },
+    {
+        id: "panorama",
+        defaultVisible: true,
+        panelLabel: "全景查看",
+        label: "全景",
+        title: "以 360° 全景方式查看图片",
+        icon: () => <ScanLine className="size-4" />,
+        run: (node, handlers) => handlers.onPanorama(node),
+    },
+    {
+        id: "panoramaGenerate",
+        defaultVisible: false,
+        panelLabel: "生成全景",
+        label: "生成全景",
+        title: "补全为 2:1 等距柱状全景图",
+        icon: () => <View className="size-4" />,
+        run: (node, handlers) => handlers.onPanoramaGenerate(node),
+    },
+    {
+        id: "drawingRender",
+        defaultVisible: true,
+        panelLabel: "图纸渲染",
+        label: "图纸渲染",
+        title: "将草图或 SU 截图渲染为写实效果图",
+        icon: () => <Building2 className="size-4" />,
+        run: (node, handlers) => handlers.onDrawingRender(node),
     },
     {
         id: "view",

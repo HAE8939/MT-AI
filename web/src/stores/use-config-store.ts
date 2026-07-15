@@ -2,6 +2,8 @@ import { useMemo } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
+import type { BizyAirWorkflowConfig } from "@/types/ai-workflow";
+import type { CosConfig } from "@/types/cos-media";
 
 export type ApiCallFormat = "openai" | "gemini";
 
@@ -52,13 +54,26 @@ export type WebdavSyncConfig = {
     directory: string;
     lastSyncedAt: string;
 };
-export type ConfigTabKey = "channels" | "models" | "preferences" | "webdav" | "codex";
+export type ConfigTabKey = "channels" | "models" | "preferences" | "workflows" | "cos" | "webdav" | "codex";
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export type ModelCapability = "image" | "video" | "text" | "audio";
 const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
+
+/** 项目配置文件（public/config.json）中可覆盖的字段 */
+type ProjectConfigJson = Partial<AiConfig> & { webdav?: Partial<WebdavSyncConfig> };
+const CONFIG_HASH_KEY = "infinite-canvas:config_json_hash";
+
+/** 简单字符串哈希，用于检测 config.json 内容是否变更 */
+function simpleHash(str: string): string {
+    let hash = 0;
+    for (let i = 0; i < str.length; i++) {
+        hash = ((hash << 5) - hash + str.charCodeAt(i)) | 0;
+    }
+    return String(hash);
+}
 
 export const defaultConfig: AiConfig = {
     channelMode: "local",
@@ -108,14 +123,33 @@ export const defaultWebdavSyncConfig: WebdavSyncConfig = {
     lastSyncedAt: "",
 };
 
+export const defaultWorkflowConfig: { bizyair: BizyAirWorkflowConfig } = {
+    bizyair: { baseUrl: "https://api.bizyair.cn", apiKey: "" },
+};
+
+export const defaultCosConfig: CosConfig = {
+    enabled: true,
+    secretId: "REDACTED_COS_SECRET_ID",
+    secretKey: "REDACTED_COS_SECRET_KEY",
+    bucket: "dmds-images-1259154611",
+    region: "ap-guangzhou",
+    publicBaseUrl: "https://dmds-images-1259154611.cos.ap-guangzhou.myqcloud.com",
+    objectPrefix: "infinite-canvas",
+};
+
 type ConfigStore = {
     config: AiConfig;
     webdav: WebdavSyncConfig;
+    workflowConfig: { bizyair: BizyAirWorkflowConfig };
+    cosConfig: CosConfig;
     isConfigOpen: boolean;
     configTab: ConfigTabKey;
     shouldPromptContinue: boolean;
+    initialized: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
     updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
+    updateBizyAirConfig: <K extends keyof BizyAirWorkflowConfig>(key: K, value: BizyAirWorkflowConfig[K]) => void;
+    updateCosConfig: <K extends keyof CosConfig>(key: K, value: CosConfig[K]) => void;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (shouldPromptContinue?: boolean, tab?: ConfigTabKey) => void;
     setConfigDialogOpen: (isOpen: boolean) => void;
@@ -167,14 +201,72 @@ function isAiConfigReady(config: AiConfig, model: string) {
     return Boolean(model.trim() && channel.baseUrl.trim() && channel.apiKey.trim());
 }
 
+// --- project config loading ---
+
+let loadedProjectConfig: ProjectConfigJson | null = null;
+
+async function fetchProjectConfig(): Promise<ProjectConfigJson> {
+    try {
+        const base = import.meta.env.BASE_URL || "/";
+        const url = `${base}config.json`;
+        const response = await fetch(url, { cache: "no-store" });
+        if (!response.ok) return {};
+        return (await response.json()) as ProjectConfigJson;
+    } catch {
+        return {};
+    }
+}
+
+function normalizeConfig(baseConfig: AiConfig, persistedConfig: Partial<AiConfig>): AiConfig {
+    const config = { ...baseConfig, ...persistedConfig };
+    if (!Array.isArray(persistedConfig.channels)) config.channels = baseConfig.channels;
+    const channels = normalizeChannels(config);
+    const models = modelOptionsFromChannels(channels);
+
+    // For model lists: use persisted if available, else baseConfig's, else auto-derive
+    const pc = persistedConfig;
+    const imageModels = Array.isArray(pc.imageModels) ? normalizeModelList(config.imageModels, channels) : baseConfig.imageModels.length ? normalizeModelList(baseConfig.imageModels, channels) : filterModelsByCapability(models, "image");
+    const videoModels = Array.isArray(pc.videoModels) ? normalizeModelList(config.videoModels, channels) : baseConfig.videoModels.length ? normalizeModelList(baseConfig.videoModels, channels) : filterModelsByCapability(models, "video");
+    const textModels = Array.isArray(pc.textModels) ? normalizeModelList(config.textModels, channels) : baseConfig.textModels.length ? normalizeModelList(baseConfig.textModels, channels) : filterModelsByCapability(models, "text");
+    const audioModels = Array.isArray(pc.audioModels) ? normalizeModelList(config.audioModels, channels) : baseConfig.audioModels.length ? normalizeModelList(baseConfig.audioModels, channels) : filterModelsByCapability(models, "audio");
+
+    return {
+        ...config,
+        channelMode: "local",
+        apiFormat: normalizeApiFormat(config.apiFormat),
+        channels,
+        models,
+        imageModel: normalizeModelOptionValue(config.imageModel || config.model, channels),
+        videoModel: normalizeModelOptionValue(config.videoModel || "grok-imagine-video", channels),
+        textModel: normalizeModelOptionValue(config.textModel || config.model, channels),
+        audioModel: normalizeModelOptionValue(config.audioModel || baseConfig.audioModel, channels),
+        audioVoice: config.audioVoice || baseConfig.audioVoice,
+        audioFormat: config.audioFormat || baseConfig.audioFormat,
+        audioSpeed: config.audioSpeed || baseConfig.audioSpeed,
+        audioInstructions: config.audioInstructions || "",
+        videoSeconds: config.videoSeconds || "6",
+        vquality: config.vquality || "720",
+        videoGenerateAudio: config.videoGenerateAudio || "true",
+        videoWatermark: config.videoWatermark || "false",
+        canvasImageCount: config.canvasImageCount || "3",
+        imageModels,
+        videoModels,
+        textModels,
+        audioModels,
+    };
+}
+
 export const useConfigStore = create<ConfigStore>()(
     persist(
         (set, get) => ({
             config: defaultConfig,
             webdav: defaultWebdavSyncConfig,
+            workflowConfig: defaultWorkflowConfig,
+            cosConfig: defaultCosConfig,
             isConfigOpen: false,
             configTab: "channels",
             shouldPromptContinue: false,
+            initialized: false,
             updateConfig: (key, value) =>
                 set((state) => ({
                     config: {
@@ -189,6 +281,9 @@ export const useConfigStore = create<ConfigStore>()(
                         [key]: value,
                     },
                 })),
+            updateBizyAirConfig: (key, value) =>
+                set((state) => ({ workflowConfig: { ...state.workflowConfig, bizyair: { ...state.workflowConfig.bizyair, [key]: value } } })),
+            updateCosConfig: (key, value) => set((state) => ({ cosConfig: { ...state.cosConfig, [key]: value } })),
             isAiConfigReady: (config, model) => isAiConfigReady(config, model),
             openConfigDialog: (shouldPromptContinue = false, configTab = "channels") => set({ isConfigOpen: true, shouldPromptContinue, configTab }),
             setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
@@ -196,43 +291,79 @@ export const useConfigStore = create<ConfigStore>()(
         }),
         {
             name: CONFIG_STORE_KEY,
-            partialize: (state) => ({ config: state.config, webdav: state.webdav }),
+            partialize: (state) => {
+                // Only persist user-added channels (filter out admin channels from config.json)
+                const adminIds = new Set((loadedProjectConfig?.channels || []).map((c) => c.id));
+                const userChannels = state.config.channels.filter((c) => !adminIds.has(c.id));
+                return {
+                    config: { ...state.config, channels: userChannels },
+                    webdav: state.webdav,
+                    workflowConfig: state.workflowConfig,
+                    cosConfig: state.cosConfig,
+                };
+            },
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
                 const persistedWebdav = (persistedState.webdav || {}) as Partial<WebdavSyncConfig>;
-                const config = { ...defaultConfig, ...persistedConfig };
-                if (!Array.isArray(persistedConfig.channels)) config.channels = [];
-                const channels = normalizeChannels(config);
-                const models = modelOptionsFromChannels(channels);
+                const persistedWorkflowConfig = persistedState.workflowConfig?.bizyair || {};
+                const persistedCosConfig = persistedState.cosConfig || {};
+                const projectWebdav = loadedProjectConfig?.webdav;
+                const baseConfig = loadedProjectConfig ? { ...defaultConfig, ...loadedProjectConfig } : defaultConfig;
                 return {
                     ...current,
-                    webdav: { ...defaultWebdavSyncConfig, ...persistedWebdav },
-                    config: {
-                        ...config,
-                        channelMode: "local",
-                        apiFormat: normalizeApiFormat(config.apiFormat),
-                        channels,
-                        models,
-                        imageModel: normalizeModelOptionValue(config.imageModel || config.model, channels),
-                        videoModel: normalizeModelOptionValue(config.videoModel || "grok-imagine-video", channels),
-                        textModel: normalizeModelOptionValue(config.textModel || config.model, channels),
-                        audioModel: normalizeModelOptionValue(config.audioModel || defaultConfig.audioModel, channels),
-                        audioVoice: config.audioVoice || defaultConfig.audioVoice,
-                        audioFormat: config.audioFormat || defaultConfig.audioFormat,
-                        audioSpeed: config.audioSpeed || defaultConfig.audioSpeed,
-                        audioInstructions: config.audioInstructions || "",
-                        videoSeconds: config.videoSeconds || "6",
-                        vquality: config.vquality || "720",
-                        videoGenerateAudio: config.videoGenerateAudio || "true",
-                        videoWatermark: config.videoWatermark || "false",
-                        canvasImageCount: config.canvasImageCount || "3",
-                        imageModels: Array.isArray(persistedConfig.imageModels) ? normalizeModelList(config.imageModels, channels) : filterModelsByCapability(models, "image"),
-                        videoModels: Array.isArray(persistedConfig.videoModels) ? normalizeModelList(config.videoModels, channels) : filterModelsByCapability(models, "video"),
-                        textModels: Array.isArray(persistedConfig.textModels) ? normalizeModelList(config.textModels, channels) : filterModelsByCapability(models, "text"),
-                        audioModels: Array.isArray(persistedConfig.audioModels) ? normalizeModelList(config.audioModels, channels) : filterModelsByCapability(models, "audio"),
-                    },
+                    initialized: false,
+                    webdav: projectWebdav ? { ...defaultWebdavSyncConfig, ...projectWebdav } : { ...defaultWebdavSyncConfig, ...persistedWebdav },
+                    workflowConfig: { bizyair: { ...defaultWorkflowConfig.bizyair, ...persistedWorkflowConfig } },
+                    cosConfig: { ...defaultCosConfig, ...persistedCosConfig },
+                    config: normalizeConfig(baseConfig, persistedConfig),
                 };
+            },
+            onRehydrateStorage: () => () => {
+                void (async () => {
+                    const projectConfig = await fetchProjectConfig();
+                    loadedProjectConfig = projectConfig;
+                    const rawHash = simpleHash(JSON.stringify(projectConfig));
+                    const storedHash = window.localStorage.getItem(CONFIG_HASH_KEY);
+                    const baseConfig = { ...defaultConfig, ...projectConfig };
+                    const projectWebdav = projectConfig.webdav;
+
+                    // Extract user channels that were persisted (already filtered by partialize)
+                    const persistedRaw = window.localStorage.getItem(CONFIG_STORE_KEY);
+                    let persistedChannels: ModelChannel[] = [];
+                    if (persistedRaw) {
+                        try {
+                            const parsed = JSON.parse(persistedRaw);
+                            if (Array.isArray(parsed?.state?.config?.channels)) {
+                                persistedChannels = parsed.state.config.channels;
+                            }
+                        } catch {
+                            // ignore parse errors
+                        }
+                    }
+
+                    if (rawHash !== storedHash) {
+                        // config.json changed — overwrite non-channel config, merge channels
+                        const adminConfig = normalizeConfig(baseConfig, {});
+                        const mergedChannels = [...adminConfig.channels, ...persistedChannels];
+                        const currentWebdav = useConfigStore.getState().webdav;
+                        useConfigStore.setState({
+                            config: { ...adminConfig, channels: mergedChannels },
+                            webdav: projectWebdav ? { ...currentWebdav, ...projectWebdav } : currentWebdav,
+                            initialized: true,
+                        });
+                        window.localStorage.setItem(CONFIG_HASH_KEY, rawHash);
+                    } else {
+                        // config.json unchanged — ensure admin channels are fresh, keep user overrides
+                        const currentState = useConfigStore.getState();
+                        const mergedChannels = [...normalizeConfig(baseConfig, {}).channels, ...persistedChannels];
+                        useConfigStore.setState({
+                            config: { ...currentState.config, channels: mergedChannels },
+                            webdav: projectWebdav ? { ...currentState.webdav, ...projectWebdav } : currentState.webdav,
+                            initialized: true,
+                        });
+                    }
+                })();
             },
         },
     ),

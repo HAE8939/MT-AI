@@ -5,6 +5,7 @@ import { nanoid } from "nanoid";
 import { localForageStorage } from "@/lib/localforage-storage";
 import { cleanupUnusedImages, resolveImageUrl, uploadImage } from "@/services/image-storage";
 import { cleanupUnusedMedia, resolveMediaUrl } from "@/services/file-storage";
+import { enqueueCosUpload } from "@/services/media-sync";
 
 export type AssetKind = "text" | "image" | "video";
 export type TextAsset = AssetBase<"text"> & { data: { content: string } };
@@ -71,12 +72,18 @@ export const useAssetStore = create<AssetStore>()(
             addAsset: (asset) => {
                 const now = new Date().toISOString();
                 const id = nanoid();
+                enqueueAssetMedia(asset, id);
                 set((state) => ({ assets: [{ ...asset, id, createdAt: now, updatedAt: now } as Asset, ...state.assets] }));
                 return id;
             },
             updateAsset: (id, patch) =>
                 set((state) => ({
-                    assets: state.assets.map((asset) => (asset.id === id ? ({ ...asset, ...patch, updatedAt: new Date().toISOString() } as Asset) : asset)),
+                    assets: state.assets.map((asset) => {
+                        if (asset.id !== id) return asset;
+                        const updated = { ...asset, ...patch, updatedAt: new Date().toISOString() } as Asset;
+                        enqueueAssetMedia(updated, id);
+                        return updated;
+                    }),
                 })),
             removeAsset: (id) =>
                 set((state) => {
@@ -103,3 +110,15 @@ export const useAssetStore = create<AssetStore>()(
         },
     ),
 );
+
+function enqueueAssetMedia(asset: Omit<Asset, "id" | "createdAt" | "updatedAt"> | Asset, mediaId: string) {
+    if (asset.kind === "text" || !asset.data.storageKey) return;
+    const mimeType = asset.data.mimeType || (asset.kind === "image" ? "image/png" : "video/mp4");
+    enqueueCosUpload({ storageKey: asset.data.storageKey, fileName: `${asset.title || "asset"}.${assetExtension(mimeType)}`, mimeType, mediaKind: "assets", mediaId });
+}
+
+function assetExtension(mimeType: string) {
+    if (mimeType === "image/jpeg") return "jpg";
+    if (mimeType === "video/quicktime") return "mov";
+    return mimeType.split("/")[1]?.replace("+xml", "") || "bin";
+}

@@ -1,35 +1,41 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { ChangeEvent as ReactChangeEvent, DragEvent as ReactDragEvent, MouseEvent as ReactMouseEvent, PointerEvent as ReactPointerEvent } from "react";
 import { useNavigate, useParams, useSearchParams } from "react-router-dom";
-import { BookOpen, Bot, Home, ImageIcon, Images, List, Menu, Music2, Plus, Redo2, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
+import { Bot, Home, ImageIcon, Images, List, Menu, Music2, Plus, Redo2, Settings2, Trash2, Undo2, Upload, Video } from "lucide-react";
 import { saveAs } from "file-saver";
 
 import { requestEdit, requestGeneration, requestImageQuestion } from "@/services/api/image";
 import { requestAudioGeneration, storeGeneratedAudio } from "@/services/api/audio";
 import { requestVideoGeneration, storeGeneratedVideo } from "@/services/api/video";
-import { DOCS_URL } from "@/constant/env";
 import { defaultConfig, type AiConfig, useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
-import { resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
+import { imageToDataUrl, resolveImageUrl, uploadImage, type UploadedImage } from "@/services/image-storage";
 import { resolveMediaUrl, uploadMediaFile, type UploadedFile } from "@/services/file-storage";
 import { nanoid } from "nanoid";
 import { getDataUrlByteSize, readImageMeta } from "@/lib/image-utils";
 import { canvasThemes, type CanvasBackgroundMode } from "@/lib/canvas-theme";
 import { UserStatusActions } from "@/components/layout/user-status-actions";
+import { WorkflowTaskCenter } from "@/components/layout/workflow-task-drawer";
 import { useAssetStore } from "@/stores/use-asset-store";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { cropDataUrl, splitDataUrl, upscaleDataUrl } from "@/lib/canvas/canvas-image-data";
 import { fitNodeSize, nodeSizeFromRatio } from "@/lib/canvas/canvas-node-size";
+import { PANORAMA_GENERATION_PROMPT } from "@/lib/canvas/panorama-prompt";
 import { App, Button, Dropdown, Modal } from "antd";
 import { NODE_DEFAULT_SIZE, getNodeSpec } from "@/constant/canvas";
 import { ActiveConnectionPath, ConnectionPath } from "@/components/canvas/canvas-connections";
 import { CanvasConfigComposer } from "@/components/canvas/canvas-config-composer";
 import { CanvasConfigNodePanel } from "@/components/canvas/canvas-config-node-panel";
 import { CanvasNodeContextMenu } from "@/components/canvas/canvas-context-menu";
-import { CanvasNodeAngleDialog, type CanvasImageAngleParams } from "@/components/canvas/canvas-node-angle-dialog";
+import { CanvasNodeCompareDialog } from "@/components/canvas/canvas-node-compare-dialog";
+import { CanvasNodePanoramaDialog } from "@/components/canvas/canvas-node-panorama-dialog";
+import { CanvasDrawingRenderDialog } from "@/components/canvas/canvas-drawing-render-dialog";
+import { CanvasRoleWorkflowDialog } from "@/components/canvas/canvas-role-workflow-dialog";
+import { CanvasNodeAnnotateDialog } from "@/components/canvas/canvas-node-annotate-dialog";
+import { CanvasNodeAngleDialog, type CanvasImageAngleAction, type CanvasImageAngleParams } from "@/components/canvas/canvas-node-angle-dialog";
 import { CanvasNodeCropDialog, type CanvasImageCropRect } from "@/components/canvas/canvas-node-crop-dialog";
 import { CanvasNodeMaskEditDialog, type CanvasImageMaskEditPayload } from "@/components/canvas/canvas-node-mask-edit-dialog";
 import { CanvasNodeSplitDialog, type CanvasImageSplitParams } from "@/components/canvas/canvas-node-split-dialog";
-import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleParams } from "@/components/canvas/canvas-node-upscale-dialog";
+import { CanvasNodeUpscaleDialog, type CanvasImageUpscaleAction, type CanvasImageUpscaleParams } from "@/components/canvas/canvas-node-upscale-dialog";
 import { buildNodeGenerationContext, buildNodeGenerationInputs, buildNodeResponseMessages, hydrateNodeGenerationContext, type NodeGenerationInput } from "@/components/canvas/canvas-node-generation";
 import { CanvasNodeHoverToolbar, CanvasNodeInfoModal } from "@/components/canvas/canvas-node-hover-toolbar";
 import { InfiniteCanvas } from "@/components/canvas/infinite-canvas";
@@ -41,6 +47,7 @@ import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/a
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
+import { useWorkflowTaskStore } from "@/stores/use-workflow-task-store";
 import { applyCanvasAgentOps, type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { buildCanvasResourceReferences, buildNodeMentionReferences } from "@/lib/canvas/canvas-resource-references";
 import {
@@ -59,6 +66,8 @@ import {
 } from "@/types/canvas";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio } from "@/types/media";
+import type { DrawingRenderParams } from "@/types/ai-workflow";
+import type { AiRole } from "@/stores/use-role-store";
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];
@@ -253,11 +262,15 @@ function InfiniteCanvasPage() {
     });
 
     const config = useConfigStore((state) => state.config);
+    const workflowConfig = useConfigStore((state) => state.workflowConfig);
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
     const addAsset = useAssetStore((state) => state.addAsset);
     const cleanupAssetImages = useAssetStore((state) => state.cleanupImages);
+    const workflowTasks = useWorkflowTaskStore((state) => state.tasks);
+    const enqueueWorkflowTask = useWorkflowTaskStore((state) => state.enqueueTask);
+    const updateWorkflowTask = useWorkflowTaskStore((state) => state.updateTask);
     const hydrated = useCanvasStore((state) => state.hydrated);
     const createProject = useCanvasStore((state) => state.createProject);
     const openProject = useCanvasStore((state) => state.openProject);
@@ -301,6 +314,11 @@ function InfiniteCanvasPage() {
     const [superResolveNodeId, setSuperResolveNodeId] = useState<string | null>(null);
     const [angleNodeId, setAngleNodeId] = useState<string | null>(null);
     const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
+    const [compareOpen, setCompareOpen] = useState(false);
+    const [panoramaNodeId, setPanoramaNodeId] = useState<string | null>(null);
+    const [drawingRenderNodeId, setDrawingRenderNodeId] = useState<string | null>(null);
+    const [roleWorkflowOpen, setRoleWorkflowOpen] = useState(false);
+    const [annotateNodeId, setAnnotateNodeId] = useState<string | null>(null);
     const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<CanvasAgentSnapshot | null>(null);
     const [titleEditing, setTitleEditing] = useState(false);
     const [titleDraft, setTitleDraft] = useState("");
@@ -320,6 +338,7 @@ function InfiniteCanvasPage() {
     const selectionBoxRef = useRef(selectionBox);
     const pendingConnectionCreateRef = useRef(pendingConnectionCreate);
     const generationRequestsRef = useRef(new Map<string, CanvasGenerationRequest>());
+    const importedWorkflowResultsRef = useRef(new Set<string>());
 
     const createHistoryEntry = useCallback(
         (): CanvasHistoryEntry => ({
@@ -486,6 +505,47 @@ function InfiniteCanvasPage() {
         pendingConnectionCreateRef.current = pendingConnectionCreate;
     }, [nodes, connections, selectedNodeIds, viewport, connectingParams, connectionTargetNodeId, pendingConnectionCreate]);
 
+    useEffect(() => {
+        if (!projectLoaded) return;
+        workflowTasks
+            .filter((task) => task.projectId === projectId && task.status === "succeeded" && task.resultUrls.length)
+            .forEach((task) => {
+                task.targetNodeIds.forEach((targetNodeId, index) => {
+                    const resultUrl = task.resultUrls[index];
+                    const importKey = `${task.id}:${index}`;
+                    const targetNode = nodesRef.current.find((node) => node.id === targetNodeId);
+                    if (!targetNode) return;
+                    if (targetNode.metadata?.workflowTaskId === task.id && targetNode.metadata.storageKey && targetNode.metadata.status === NODE_STATUS_SUCCESS) {
+                        importedWorkflowResultsRef.current.add(importKey);
+                        return;
+                    }
+                    if (!resultUrl) {
+                        setNodes((current) => current.map((node) => (node.id === targetNodeId && node.metadata?.status === NODE_STATUS_LOADING ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: "远端任务未返回该视角结果" } } : node)));
+                        return;
+                    }
+                    if (importedWorkflowResultsRef.current.has(importKey)) return;
+                    importedWorkflowResultsRef.current.add(importKey);
+                    void fetch(resultUrl)
+                        .then((response) => {
+                            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+                            return response.blob();
+                        })
+                        .then(uploadImage)
+                        .then((image) => {
+                            const size = fitNodeSize(image.width, image.height);
+                            setNodes((current) => current.map((node) => (node.id === targetNodeId ? { ...node, width: size.width, height: size.height, metadata: { ...node.metadata, ...imageMetadata(image), workflowTaskId: task.id, workflowType: task.type, workflowResultIndex: index, errorDetails: undefined } } : node)));
+                            updateWorkflowTask(task.id, { error: undefined });
+                        })
+                        .catch((error) => {
+                            importedWorkflowResultsRef.current.delete(importKey);
+                            const detail = error instanceof Error ? error.message : "未知错误";
+                            setNodes((current) => current.map((node) => (node.id === targetNodeId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: `结果导入失败：${detail}` } } : node)));
+                            updateWorkflowTask(task.id, { status: "failed", error: `结果已生成，但导入画布失败：${detail}` });
+                        });
+                });
+            });
+    }, [projectId, projectLoaded, updateWorkflowTask, workflowTasks]);
+
     useLayoutEffect(() => {
         selectionBoxRef.current = selectionBox;
     }, [selectionBox]);
@@ -646,6 +706,14 @@ function InfiniteCanvasPage() {
     const superResolveNode = superResolveNodeId ? nodeById.get(superResolveNodeId) || null : null;
     const angleNode = angleNodeId ? nodeById.get(angleNodeId) || null : null;
     const previewNode = previewNodeId ? nodeById.get(previewNodeId) || null : null;
+    const compareNodes = useMemo(
+        () => Array.from(selectedNodeIds).map((id) => nodeById.get(id)).filter((node): node is CanvasNodeData => Boolean(node?.type === CanvasNodeType.Image && node.metadata?.content)),
+        [nodeById, selectedNodeIds],
+    );
+    const panoramaNode = panoramaNodeId ? nodeById.get(panoramaNodeId) || null : null;
+    const drawingRenderNode = drawingRenderNodeId ? nodeById.get(drawingRenderNodeId) || null : null;
+    const roleWorkflowNodes = useMemo(() => Array.from(selectedNodeIds).map((id) => nodeById.get(id)).filter((node): node is CanvasNodeData => Boolean(node && node.type !== CanvasNodeType.Group)), [nodeById, selectedNodeIds]);
+    const annotateNode = annotateNodeId ? nodeById.get(annotateNodeId) || null : null;
     const hasMultipleSelectedNodes = selectedNodeIds.size > 1;
     const activeNodeId = hasMultipleSelectedNodes ? null : hoveredNodeId || (selectedNodeIds.size === 1 ? Array.from(selectedNodeIds)[0] : null);
     const batchChildCountById = useMemo(() => {
@@ -1722,7 +1790,12 @@ function InfiniteCanvasPage() {
             const prompt = `只修改蒙版透明区域，其他区域保持不变。${userPrompt}`;
             const childId = nanoid();
             const source = { id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey };
-            const generationMetadata = buildImageGenerationMetadata("edit", generationConfig, 1, [source]);
+            const additionalReferences = payload.referenceNodeIds.flatMap((id): ReferenceImage[] => {
+                const reference = nodesRef.current.find((item) => item.id === id);
+                return reference?.type === CanvasNodeType.Image && reference.metadata?.content ? [{ id: reference.id, name: `${reference.title || reference.id}.png`, type: reference.metadata.mimeType || "image/png", dataUrl: reference.metadata.content, storageKey: reference.metadata.storageKey }] : [];
+            });
+            const references: ReferenceImage[] = [source, ...additionalReferences];
+            const generationMetadata = buildImageGenerationMetadata("edit", generationConfig, 1, references);
             setMaskEditNodeId(null);
             setRunningNodeId(childId);
             setNodes((prev) => [
@@ -1743,7 +1816,7 @@ function InfiniteCanvasPage() {
             setDialogNodeId(childId);
             const controller = startGenerationRequest(childId, node.id, childId);
             try {
-                const image = await requestEdit(generationConfig, prompt, [source], { id: `${node.id}-mask`, name: "mask.png", type: "image/png", dataUrl: payload.maskDataUrl }, { signal: controller.signal }).then((items) => items[0]);
+                const image = await requestEdit(generationConfig, prompt, references, { id: `${node.id}-mask`, name: "mask.png", type: "image/png", dataUrl: payload.maskDataUrl }, { signal: controller.signal }).then((items) => items[0]);
                 const uploaded = await uploadImage(image.dataUrl);
                 const size = fitNodeSize(uploaded.width, uploaded.height, node.width, node.height);
                 setNodes((prev) => prev.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(uploaded), prompt, ...generationMetadata } } : item)));
@@ -1784,6 +1857,101 @@ function InfiniteCanvasPage() {
         setSelectedNodeIds(new Set([childId]));
         setDialogNodeId(childId);
     }, []);
+
+    const addAnnotatedImage = useCallback(async (node: CanvasNodeData, dataUrl: string) => {
+        const image = await uploadImage(dataUrl);
+        const size = fitNodeSize(image.width, image.height, node.width, node.height);
+        const childId = nanoid();
+        setAnnotateNodeId(null);
+        setNodes((current) => [...current, { id: childId, type: CanvasNodeType.Image, title: `${node.title || "图片"} · 标注`, position: { x: node.position.x + node.width + 96, y: node.position.y }, width: size.width, height: size.height, metadata: { ...imageMetadata(image), prompt: node.metadata?.prompt } }]);
+        setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
+        setSelectedNodeIds(new Set([childId]));
+        setDialogNodeId(childId);
+    }, []);
+
+    const runUpscaleAction = useCallback(
+        (node: CanvasNodeData, action: CanvasImageUpscaleAction) => {
+            if (action.mode === "local") {
+                void upscaleImageNode(node, action.params);
+                return;
+            }
+            if (!workflowConfig.bizyair.baseUrl.trim() || !workflowConfig.bizyair.apiKey.trim()) {
+                openConfigDialog(false, "workflows");
+                message.warning("请先配置 BizyAir 专业工作流");
+                return;
+            }
+            const childId = nanoid();
+            const taskId = enqueueWorkflowTask({ projectId, sourceNodeId: node.id, targetNodeIds: [childId], type: "upscale", params: { targetResolution: action.targetResolution } });
+            setUpscaleNodeId(null);
+            setSuperResolveNodeId(null);
+            setNodes((current) => [
+                ...current,
+                {
+                    id: childId,
+                    type: CanvasNodeType.Image,
+                    title: `AI 超分 ${action.targetResolution / 1024}K`,
+                    position: { x: node.position.x + node.width + 96, y: node.position.y },
+                    width: node.width,
+                    height: node.height,
+                    metadata: { prompt: node.metadata?.prompt, status: NODE_STATUS_LOADING, workflowTaskId: taskId, workflowType: "upscale", workflowResultIndex: 0 },
+                },
+            ]);
+            setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
+            setSelectedNodeIds(new Set([childId]));
+            setDialogNodeId(childId);
+            message.success("AI 超分任务已提交");
+        },
+        [enqueueWorkflowTask, message, openConfigDialog, projectId, upscaleImageNode, workflowConfig.bizyair.apiKey, workflowConfig.bizyair.baseUrl],
+    );
+
+    const enqueueDrawingRender = useCallback(
+        (node: CanvasNodeData, params: DrawingRenderParams) => {
+            if (!workflowConfig.bizyair.baseUrl.trim() || !workflowConfig.bizyair.apiKey.trim()) {
+                openConfigDialog(false, "workflows");
+                message.warning("请先配置 BizyAir 专业工作流");
+                return;
+            }
+            const childId = nanoid();
+            const taskId = enqueueWorkflowTask({ projectId, sourceNodeId: node.id, targetNodeIds: [childId], type: "drawing-render", params });
+            setDrawingRenderNodeId(null);
+            setNodes((current) => [...current, { id: childId, type: CanvasNodeType.Image, title: "图纸渲染结果", position: { x: node.position.x + node.width + 96, y: node.position.y }, width: node.width, height: node.height, metadata: { prompt: params.description || "图纸渲染", status: NODE_STATUS_LOADING, workflowTaskId: taskId, workflowType: "drawing-render", workflowResultIndex: 0 } }]);
+            setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
+            setSelectedNodeIds(new Set([childId]));
+            setDialogNodeId(childId);
+            message.success("图纸渲染任务已提交");
+        },
+        [enqueueWorkflowTask, message, openConfigDialog, projectId, workflowConfig.bizyair.apiKey, workflowConfig.bizyair.baseUrl],
+    );
+
+    const generatePanoramaNode = useCallback(
+        async (node: CanvasNodeData) => {
+            if (!node.metadata?.content) return;
+            const generationConfig = { ...buildGenerationConfig(effectiveConfig, node, "image"), count: "1", size: "2:1" };
+            if (!isAiConfigReady(generationConfig, generationConfig.model)) {
+                openConfigDialog(true);
+                return;
+            }
+            const childId = nanoid();
+            setNodes((current) => [...current, { id: childId, type: CanvasNodeType.Image, title: "全景图", position: { x: node.position.x + node.width + 96, y: node.position.y }, width: 480, height: 240, metadata: { prompt: PANORAMA_GENERATION_PROMPT, status: NODE_STATUS_LOADING, panoramaProjection: "equirectangular" } }]);
+            setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
+            setSelectedNodeIds(new Set([childId]));
+            const controller = startGenerationRequest(childId, node.id, childId);
+            try {
+                const source = { id: node.id, name: `${node.title || node.id}.png`, type: node.metadata.mimeType || "image/png", dataUrl: node.metadata.content, storageKey: node.metadata.storageKey };
+                const result = await requestEdit(generationConfig, PANORAMA_GENERATION_PROMPT, [source], undefined, { signal: controller.signal }).then((items) => items[0]);
+                const image = await uploadImage(result.dataUrl);
+                const size = fitNodeSize(image.width, image.height, 480, 240);
+                setNodes((current) => current.map((item) => (item.id === childId ? { ...item, width: size.width, height: size.height, metadata: { ...item.metadata, ...imageMetadata(image), prompt: PANORAMA_GENERATION_PROMPT, panoramaProjection: "equirectangular" } } : item)));
+            } catch (error) {
+                if (isGenerationCanceled(error)) return;
+                const detail = error instanceof Error ? error.message : "全景生成失败";
+                setNodes((current) => current.map((item) => (item.id === childId ? { ...item, metadata: { ...item.metadata, status: NODE_STATUS_ERROR, errorDetails: detail } } : item)));
+            } finally {
+                finishGenerationRequest(childId, controller);
+            }
+        },
+        [effectiveConfig, finishGenerationRequest, isAiConfigReady, openConfigDialog, startGenerationRequest],
+    );
 
     const generateAngleNode = useCallback(
         async (node: CanvasNodeData, params: CanvasImageAngleParams) => {
@@ -1835,6 +2003,89 @@ function InfiniteCanvasPage() {
             }
         },
         [effectiveConfig, finishGenerationRequest, openConfigDialog, startGenerationRequest],
+    );
+
+    const runAngleAction = useCallback(
+        (node: CanvasNodeData, action: CanvasImageAngleAction) => {
+            if (action.mode === "generic") {
+                void generateAngleNode(node, action.params);
+                return;
+            }
+            if (!workflowConfig.bizyair.baseUrl.trim() || !workflowConfig.bizyair.apiKey.trim()) {
+                openConfigDialog(false, "workflows");
+                message.warning("请先配置 BizyAir 专业工作流");
+                return;
+            }
+            const childIds = [nanoid(), nanoid()];
+            const taskId = enqueueWorkflowTask({ projectId, sourceNodeId: node.id, targetNodeIds: childIds, type: "multi-angle", params: action.params });
+            const gap = 24;
+            setAngleNodeId(null);
+            setNodes((current) => [
+                ...current,
+                ...childIds.map((id, index) => ({
+                    id,
+                    type: CanvasNodeType.Image,
+                    title: `多角度 · 相机 ${index + 1}`,
+                    position: { x: node.position.x + node.width + 96, y: node.position.y + index * (node.height + gap) },
+                    width: node.width,
+                    height: node.height,
+                    metadata: { prompt: `相机 ${index + 1}：水平 ${index ? action.params.camera2.horizontal : action.params.camera1.horizontal}°`, status: NODE_STATUS_LOADING, workflowTaskId: taskId, workflowType: "multi-angle" as const, workflowResultIndex: index },
+                })),
+            ]);
+            setConnections((current) => [...current, ...childIds.map((id) => ({ id: nanoid(), fromNodeId: node.id, toNodeId: id }))]);
+            setSelectedNodeIds(new Set(childIds));
+            message.success("双相机多角度任务已提交");
+        },
+        [enqueueWorkflowTask, generateAngleNode, message, openConfigDialog, projectId, workflowConfig.bizyair.apiKey, workflowConfig.bizyair.baseUrl],
+    );
+
+    const runRoleWorkflow = useCallback(
+        async (role: AiRole, instruction: string) => {
+            const selected = roleWorkflowNodes;
+            if (!selected.length) return;
+            const generationConfig = { ...effectiveConfig, model: effectiveConfig.textModel || effectiveConfig.model };
+            if (!isAiConfigReady(generationConfig, generationConfig.model)) {
+                openConfigDialog(true);
+                return;
+            }
+            const childId = nanoid();
+            const rightEdge = Math.max(...selected.map((node) => node.position.x + node.width));
+            const centerY = selected.reduce((sum, node) => sum + node.position.y + node.height / 2, 0) / selected.length;
+            const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
+            const textInputs = selected.flatMap((node) => {
+                const text = node.type === CanvasNodeType.Text ? node.metadata?.content : node.metadata?.prompt;
+                return text?.trim() ? [`${node.title}：\n${text.trim()}`] : [];
+            });
+            setRoleWorkflowOpen(false);
+            setNodes((current) => [...current, { id: childId, type: CanvasNodeType.Text, title: role.name, position: { x: rightEdge + 96, y: centerY - spec.height / 2 }, width: spec.width, height: spec.height, metadata: { content: "正在分析...", prompt: instruction, status: NODE_STATUS_LOADING, fontSize: 14 } }]);
+            setConnections((current) => [...current, ...selected.map((node) => ({ id: nanoid(), fromNodeId: node.id, toNodeId: childId }))]);
+            setSelectedNodeIds(new Set([childId]));
+            setDialogNodeId(childId);
+            const controller = startGenerationRequest(childId, selected[0].id, childId);
+            try {
+                const imageParts = await Promise.all(
+                    selected.filter((node) => node.type === CanvasNodeType.Image && node.metadata?.content).map(async (node) => ({ type: "image_url" as const, image_url: { url: await imageToDataUrl({ storageKey: node.metadata?.storageKey, url: node.metadata?.content }) } })),
+                );
+                const taskText = [instruction || "请按照角色职责分析所选内容。", ...textInputs].join("\n\n");
+                const messages: import("@/services/api/image").AiTextMessage[] = [
+                    { role: "system", content: role.systemPrompt },
+                    { role: "user", content: imageParts.length ? [{ type: "text", text: taskText }, ...imageParts] : taskText },
+                ];
+                let streamed = "";
+                const answer = await requestImageQuestion(generationConfig, messages, (text) => {
+                    streamed = text;
+                    setNodes((current) => current.map((node) => node.id === childId ? { ...node, metadata: { ...node.metadata, content: text, status: NODE_STATUS_LOADING } } : node));
+                }, { signal: controller.signal });
+                setNodes((current) => current.map((node) => node.id === childId ? { ...node, metadata: { ...node.metadata, content: answer || streamed, status: NODE_STATUS_SUCCESS } } : node));
+            } catch (error) {
+                if (isGenerationCanceled(error)) return;
+                const detail = error instanceof Error ? error.message : "角色分析失败";
+                setNodes((current) => current.map((node) => node.id === childId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: detail } } : node));
+            } finally {
+                finishGenerationRequest(childId, controller);
+            }
+        },
+        [effectiveConfig, finishGenerationRequest, isAiConfigReady, openConfigDialog, roleWorkflowNodes, startGenerationRequest],
     );
 
     const handleFontSizeChange = useCallback((nodeId: string, fontSize: number) => {
@@ -2665,6 +2916,10 @@ function InfiniteCanvasPage() {
                     onUpscale={(node) => setUpscaleNodeId(node.id)}
                     onSuperResolve={(node) => setSuperResolveNodeId(node.id)}
                     onAngle={(node) => setAngleNodeId(node.id)}
+                    onPanorama={(node) => setPanoramaNodeId(node.id)}
+                    onPanoramaGenerate={(node) => void generatePanoramaNode(node)}
+                    onDrawingRender={(node) => setDrawingRenderNodeId(node.id)}
+                    onAnnotate={(node) => setAnnotateNodeId(node.id)}
                     onViewImage={(node) => setPreviewNodeId(node.id)}
                     onReversePrompt={createImageReversePromptNodes}
                     onRetry={(node) => void handleRetryNode(node)}
@@ -2674,6 +2929,8 @@ function InfiniteCanvasPage() {
 
                 <CanvasToolbar
                     selectedCount={selectedNodeIds.size}
+                    canCompare={selectedNodeIds.size === 2 && compareNodes.length === 2}
+                    canRunRole={roleWorkflowNodes.length > 0}
                     canUndo={historyState.canUndo}
                     canRedo={historyState.canRedo}
                     backgroundMode={backgroundMode}
@@ -2688,6 +2945,8 @@ function InfiniteCanvasPage() {
                     onRedo={redoCanvas}
                     onUpload={() => handleUploadRequest()}
                     onDelete={() => deleteNodes(new Set(selectedNodeIds))}
+                    onCompare={() => setCompareOpen(true)}
+                    onRunRole={() => setRoleWorkflowOpen(true)}
                     onClear={() => setClearConfirmOpen(true)}
                     onDeselect={deselectCanvas}
                     onBackgroundModeChange={setBackgroundMode}
@@ -2727,17 +2986,46 @@ function InfiniteCanvasPage() {
 
                 {cropNode?.metadata?.content ? <CanvasNodeCropDialog dataUrl={cropNode.metadata.content} open={Boolean(cropNode)} onClose={() => setCropNodeId(null)} onConfirm={(crop) => void cropImageNode(cropNode!, crop)} /> : null}
 
-                {maskEditNode?.metadata?.content ? <CanvasNodeMaskEditDialog dataUrl={maskEditNode.metadata.content} open={Boolean(maskEditNode)} onClose={() => setMaskEditNodeId(null)} onConfirm={(payload) => void maskEditImageNode(maskEditNode!, payload)} /> : null}
+                {maskEditNode?.metadata?.content ? <CanvasNodeMaskEditDialog dataUrl={maskEditNode.metadata.content} imageOptions={nodes.filter((node) => node.type === CanvasNodeType.Image && node.id !== maskEditNode.id && node.metadata?.content).map((node) => ({ label: node.title, value: node.id }))} open={Boolean(maskEditNode)} onClose={() => setMaskEditNodeId(null)} onConfirm={(payload) => void maskEditImageNode(maskEditNode, payload)} /> : null}
 
                 {splitNode?.metadata?.content ? <CanvasNodeSplitDialog dataUrl={splitNode.metadata.content} open={Boolean(splitNode)} onClose={() => setSplitNodeId(null)} onConfirm={(params) => void splitImageNode(splitNode!, params)} /> : null}
 
-                {upscaleNode?.metadata?.content ? <CanvasNodeUpscaleDialog dataUrl={upscaleNode.metadata.content} open={Boolean(upscaleNode)} onClose={() => setUpscaleNodeId(null)} onConfirm={(params) => void upscaleImageNode(upscaleNode!, params)} /> : null}
+                {upscaleNode?.metadata?.content ? <CanvasNodeUpscaleDialog dataUrl={upscaleNode.metadata.content} open={Boolean(upscaleNode)} onClose={() => setUpscaleNodeId(null)} onConfirm={(action) => runUpscaleAction(upscaleNode!, action)} /> : null}
 
-                <Modal title="AI 超分" open={Boolean(superResolveNode?.metadata?.content)} centered footer={null} onCancel={() => setSuperResolveNodeId(null)}>
-                    <div className="py-8 text-center text-base font-medium">暂未实现</div>
-                </Modal>
+                {superResolveNode?.metadata?.content ? <CanvasNodeUpscaleDialog dataUrl={superResolveNode.metadata.content} open={Boolean(superResolveNode)} defaultMode="ai" onClose={() => setSuperResolveNodeId(null)} onConfirm={(action) => runUpscaleAction(superResolveNode!, action)} /> : null}
 
-                {angleNode?.metadata?.content ? <CanvasNodeAngleDialog dataUrl={angleNode.metadata.content} open={Boolean(angleNode)} onClose={() => setAngleNodeId(null)} onConfirm={(params) => void generateAngleNode(angleNode!, params)} /> : null}
+                {angleNode?.metadata?.content ? <CanvasNodeAngleDialog dataUrl={angleNode.metadata.content} open={Boolean(angleNode)} onClose={() => setAngleNodeId(null)} onConfirm={(action) => runAngleAction(angleNode, action)} /> : null}
+
+                <CanvasNodeCompareDialog
+                    images={compareNodes.map((node) => ({ id: node.id, title: node.title, url: node.metadata?.content || "" }))}
+                    open={compareOpen}
+                    onClose={() => setCompareOpen(false)}
+                />
+
+                <CanvasNodePanoramaDialog
+                    image={panoramaNode?.metadata?.content ? { title: panoramaNode.title, url: panoramaNode.metadata.content, width: panoramaNode.metadata.naturalWidth, height: panoramaNode.metadata.naturalHeight } : null}
+                    open={Boolean(panoramaNode?.metadata?.content)}
+                    onClose={() => setPanoramaNodeId(null)}
+                />
+
+                {drawingRenderNode?.metadata?.content ? (
+                    <CanvasDrawingRenderDialog
+                        sourceUrl={drawingRenderNode.metadata.content}
+                        imageOptions={nodes.filter((node) => node.type === CanvasNodeType.Image && node.id !== drawingRenderNode.id && node.metadata?.content).map((node) => ({ label: node.title, value: node.id }))}
+                        open={Boolean(drawingRenderNode)}
+                        onClose={() => setDrawingRenderNodeId(null)}
+                        onConfirm={(params) => enqueueDrawingRender(drawingRenderNode, params)}
+                    />
+                ) : null}
+
+                <CanvasRoleWorkflowDialog
+                    selectedNodes={roleWorkflowNodes.map((node) => ({ id: node.id, title: node.title, type: node.type }))}
+                    open={roleWorkflowOpen}
+                    onClose={() => setRoleWorkflowOpen(false)}
+                    onRun={(role, instruction) => void runRoleWorkflow(role, instruction)}
+                />
+
+                {annotateNode?.metadata?.content ? <CanvasNodeAnnotateDialog dataUrl={annotateNode.metadata.content} open={Boolean(annotateNode)} onClose={() => setAnnotateNodeId(null)} onConfirm={(dataUrl) => void addAnnotatedImage(annotateNode, dataUrl)} /> : null}
 
                 <Modal
                     title="图片详情"
@@ -2844,7 +3132,6 @@ function CanvasTopBar({
                         menu={{
                             items: [
                                 { key: "home", icon: <Home className="size-4" />, label: "主页", onClick: onHome },
-                                { key: "docs", icon: <BookOpen className="size-4" />, label: "文档", onClick: () => window.open(DOCS_URL, "_blank", "noopener,noreferrer") },
                                 { key: "projects", icon: <Images className="size-4" />, label: "我的画布", onClick: onProjects },
                                 { type: "divider" },
                                 { key: "new", icon: <Plus className="size-4" />, label: "新建画布", onClick: onCreateProject },
@@ -2891,6 +3178,7 @@ function CanvasTopBar({
                 </div>
 
                 <div className="pointer-events-auto flex items-center gap-1.5">
+                    <WorkflowTaskCenter />
                     <UserStatusActions
                         variant="canvas"
                         onOpenShortcuts={() => setShortcutsOpen(true)}

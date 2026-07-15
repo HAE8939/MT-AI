@@ -1,0 +1,147 @@
+---
+title: Codex 能力清单
+description: Codex 连接 Infinite Canvas 后可以读取、创建和操作的功能范围
+---
+
+# Codex 能力清单
+
+Codex 通过本机 `Canvas Agent` 与网页连接。连接成功后，Codex 使用 MCP 工具读取浏览器中的本地数据，并把导航、画布操作和生成任务交给网页执行。
+
+## 如何判断连接状态
+
+连接分为两个层次：
+
+- **站点已连接**：Canvas Agent 至少有一个网页客户端，可以导航页面、列出画布、操作工作台、搜索提示词和访问“我的素材”。
+- **画布已连接**：网页当前打开了具体画布，并已同步节点、连线、选区和视口；此时才可以读写画布节点。
+
+网页显示“已连接”只代表站点链路已经建立。如果 Codex 读取画布时返回 `hasCanvas: false`，需要先打开或新建一个画布。
+
+## 能力概览
+
+| 能力 | Codex 可以完成的任务 | 主要工具 |
+| --- | --- | --- |
+| 页面导航 | 打开首页、画布列表、指定画布、生图工作台、视频创作台、提示词库、素材和配置页面 | `site_navigate` |
+| 画布项目 | 搜索和分页列出本地画布，读取标题、时间、节点数与连线数 | `canvas_list_projects` |
+| 画布读取 | 读取当前画布、当前选区和布局快照 | `canvas_get_state`、`canvas_get_selection`、`canvas_export_snapshot` |
+| 节点创建 | 创建文本、图片、视频、音频和生成配置节点，批量创建文本节点 | `canvas_create_node`、`canvas_create_text_node`、`canvas_create_text_nodes`、`canvas_create_config_node` |
+| 节点编辑 | 修改节点标题、文本、基础字段和 metadata，移动、缩放或删除节点 | `canvas_update_node`、`canvas_update_node_text`、`canvas_move_nodes`、`canvas_resize_node`、`canvas_delete_nodes` |
+| 连线与视图 | 批量连接节点、设置选区、调整视口，或一次执行多种底层操作 | `canvas_connect_nodes`、`canvas_select_nodes`、`canvas_set_viewport`、`canvas_apply_ops` |
+| 生成流程 | 创建提示词到配置节点的流程，连接参考节点，触发文字、图片、视频或音频生成 | `canvas_create_image_prompt_flow`、`canvas_create_generation_flow`、`canvas_generate_text`、`canvas_generate_image`、`canvas_generate_video`、`canvas_generate_audio`、`canvas_run_generation` |
+| 生图工作台 | 读取模型、质量、比例和张数选项，填写参数并提交生图 | `workbench_image_get_config`、`workbench_image_generate` |
+| 视频创作台 | 读取模型、比例、时长、清晰度、声音和水印选项，填写参数并提交视频生成 | `workbench_video_get_config`、`workbench_video_generate` |
+| 提示词库 | 按关键词、分类和标签搜索提示词，分页读取提示词内容和封面信息 | `prompts_search` |
+| 我的素材 | 按类型和关键词浏览素材，新增文本素材或图片素材 | `assets_list`、`assets_add` |
+
+## 画布操作明细
+
+### 读取和理解画布
+
+Codex 可以：
+
+- 读取当前画布的节点、连线、选区和视口。
+- 读取当前选中的节点，用于只处理用户指定内容。
+- 导出紧凑画布快照，理解现有布局和上下游关系。
+- 列出全部本地画布，并根据名称找到画布 ID 后跳转打开。
+
+### 创建和整理内容
+
+Codex 可以：
+
+- 创建单个文本节点，或按横向、纵向批量排布多个文本节点。
+- 创建图片、视频、音频和生成配置占位节点。
+- 修改文本、标题、节点属性和 metadata。
+- 按绝对坐标或相对偏移移动多个节点。
+- 调整节点尺寸，并指定图片节点是否自由缩放。
+- 批量连接节点、删除节点、删除连线、设置选区和视口。
+
+复杂操作会统一转换为 `canvas_apply_ops`，底层支持：
+
+- `add_node`
+- `update_node`
+- `delete_node`
+- `delete_connections`
+- `connect_nodes`
+- `set_viewport`
+- `select_nodes`
+- `run_generation`
+
+### 创建 AI 生成流程
+
+Codex 可以创建并触发四类生成流程：
+
+- 文字生成
+- 图片生成
+- 视频生成
+- 音频生成
+
+生成流程可以包含提示词文本节点、生成配置节点和参考节点连线，并可设置模型、尺寸、质量、数量、时长、清晰度、声音、水印、音色、格式和语速等参数。
+
+## 站点级任务示例
+
+连接后可以直接向 Codex 提出类似任务：
+
+- “列出我的画布，打开名称包含‘产品海报’的画布。”
+- “读取当前画布，把选中的三段文字整理成从上到下的脚本节点。”
+- “创建一条 1:1 图片生成流程，连接当前选中的参考图，然后开始生成。”
+- “把这几个节点移动到右侧并依次连线。”
+- “读取生图工作台可用模型，用指定提示词生成 4 张图片。”
+- “搜索标签为‘摄影’的提示词，把其中一条加入我的素材。”
+- “在我的素材中新建一条文本素材，并附上标签和来源。”
+
+## 前置条件
+
+- Canvas Agent 必须保持运行，默认地址为 `http://127.0.0.1:17371`。
+- 网页必须使用正确的 `Connect token` 建立连接。
+- 操作节点前必须打开具体画布；仅停留在首页时不能读写画布节点。
+- 实际生成文字、图片、视频或音频前，需要在网页中配置可用的 AI 渠道、API Key 和模型。
+- 生成任务是异步提交；工具返回成功代表任务已提交，最终结果需要在画布或工作台查看。
+
+## 确认、撤销和限制
+
+- 画布写操作默认需要在网页侧确认；关闭“工具确认”后才会直接执行。
+- 网页支持撤销上一轮 Agent 画布操作。
+- Codex 不直接操作浏览器 DOM，也不模拟鼠标；所有站点和画布操作都通过结构化工具执行。
+- 画布、提示词修改和“我的素材”主要保存在浏览器本地，不代表已同步到云端。
+- `assets_add` 当前只支持新增文本和图片素材；视频素材可以查询，但不能通过该工具新增。
+- 提示词搜索和素材列表为控制返回体积，不会返回所有原始媒体数据。
+
+## 已注册工具
+
+当前共注册 32 个工具：
+
+```txt
+site_navigate
+canvas_list_projects
+canvas_get_state
+canvas_get_selection
+canvas_export_snapshot
+canvas_apply_ops
+canvas_create_node
+canvas_create_text_node
+canvas_create_text_nodes
+canvas_create_config_node
+canvas_create_image_prompt_flow
+canvas_create_generation_flow
+canvas_generate_text
+canvas_generate_image
+canvas_generate_video
+canvas_generate_audio
+canvas_update_node
+canvas_update_node_text
+canvas_move_nodes
+canvas_resize_node
+canvas_delete_nodes
+canvas_connect_nodes
+canvas_select_nodes
+canvas_set_viewport
+canvas_run_generation
+workbench_image_get_config
+workbench_image_generate
+workbench_video_get_config
+workbench_video_generate
+prompts_search
+assets_list
+assets_add
+```
+
+连接原理和安全边界参见[本地 Codex 连接画布原理](/docs/overview/local-codex-canvas)。

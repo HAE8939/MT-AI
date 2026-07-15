@@ -188,7 +188,7 @@ async function searchPrompts(input: SiteToolInput) {
         pageSize,
         categories: result.categories,
         tags: result.tags.slice(0, 60),
-        items: result.items.map((prompt) => ({ id: prompt.id, title: prompt.title, prompt: prompt.prompt, category: prompt.category, tags: prompt.tags, coverUrl: prompt.coverUrl, githubUrl: prompt.githubUrl })),
+        items: result.items.map((prompt) => ({ id: prompt.id, title: prompt.title, prompt: prompt.prompt, tags: prompt.tags, coverUrl: prompt.coverUrl })),
     };
 }
 

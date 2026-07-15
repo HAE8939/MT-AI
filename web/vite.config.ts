@@ -22,4 +22,19 @@ export default defineConfig({
         __APP_VERSION__: JSON.stringify(localVersion),
         __APP_RELEASES__: JSON.stringify(parseChangelog(localChangelog)),
     },
+    server: {
+        proxy: {
+            "/webdav-proxy": {
+                target: "http://192.168.1.135:5005",
+                changeOrigin: true,
+                rewrite: (path) => path.replace(/^\/webdav-proxy/, "/sata12-REDACTED_USERNAME/备份/WEBDAV"),
+                configure: (proxy) => {
+                    proxy.on("proxyReq", (proxyReq, req) => {
+                        // Forward WebDAV methods
+                        if (req.method) proxyReq.method = req.method;
+                    });
+                },
+            },
+        },
+    },
 });

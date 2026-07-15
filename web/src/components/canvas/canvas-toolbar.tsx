@@ -1,7 +1,7 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useRef, useState } from "react";
 import { Button, Segmented, Switch } from "antd";
-import { CircleDot, Eraser, FolderOpen, Grid2x2, Group, Hand, Image as ImageIcon, Info, Moon, Music2, Palette, Redo2, Settings2, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
+import { CircleDot, Columns2, Eraser, FolderOpen, Grid2x2, Group, Hand, Image as ImageIcon, Info, Moon, Music2, Palette, Redo2, Settings2, Sparkles, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
 
 import { canvasThemes, type CanvasBackgroundMode, type CanvasColorTheme, type CanvasTheme } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -9,6 +9,8 @@ import { AnimatedThemeToggler } from "@/components/ui/animated-theme-toggler";
 
 export function CanvasToolbar({
     selectedCount,
+    canCompare,
+    canRunRole,
     canUndo,
     canRedo,
     backgroundMode,
@@ -23,6 +25,8 @@ export function CanvasToolbar({
     onRedo,
     onUpload,
     onDelete,
+    onCompare,
+    onRunRole,
     onClear,
     onDeselect,
     onBackgroundModeChange,
@@ -30,6 +34,8 @@ export function CanvasToolbar({
     onOpenMyAssets,
 }: {
     selectedCount: number;
+    canCompare: boolean;
+    canRunRole: boolean;
     canUndo: boolean;
     canRedo: boolean;
     backgroundMode: CanvasBackgroundMode;
@@ -44,6 +50,8 @@ export function CanvasToolbar({
     onRedo: () => void;
     onUpload: () => void;
     onDelete: () => void;
+    onCompare: () => void;
+    onRunRole: () => void;
     onClear: () => void;
     onDeselect: () => void;
     onBackgroundModeChange: (mode: CanvasBackgroundMode) => void;
@@ -119,9 +127,18 @@ export function CanvasToolbar({
                 >
                     <Palette className="size-4.5" />
                 </ToolbarButton>
+                <Divider theme={theme} />
+                <ToolbarButton id="tool-role" label={canRunRole ? "专业角色" : "专业角色（请先选择节点）"} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onRunRole}>
+                    <Sparkles className="size-4.5" />
+                </ToolbarButton>
                 {selectedCount ? (
                     <>
                         <Divider theme={theme} />
+                        {canCompare ? (
+                            <ToolbarButton id="tool-compare" label="对比图片" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onCompare}>
+                                <Columns2 className="size-4.5" />
+                            </ToolbarButton>
+                        ) : null}
                         <ToolbarButton id="tool-delete" label="删除选中" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onDelete} danger>
                             <Trash2 className="size-4.5" />
                         </ToolbarButton>
@@ -290,6 +307,8 @@ function toolLabel(id: string) {
     if (id === "tool-upload") return "上传素材";
     if (id === "tool-assets") return "我的素材";
     if (id === "tool-style") return "画布外观";
+    if (id === "tool-compare") return "对比图片";
+    if (id === "tool-role") return "专业角色";
     if (id === "tool-delete") return "删除选中";
     if (id === "tool-clear") return "清空画布";
     return "";

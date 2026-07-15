@@ -2,6 +2,9 @@ import localforage from "localforage";
 
 import { nanoid } from "nanoid";
 import { readImageMeta } from "@/lib/image-utils";
+import { enqueueCosUpload } from "@/services/media-sync";
+import { useCosUploadStore } from "@/stores/use-cos-upload-store";
+import type { CosMediaKind } from "@/types/cos-media";
 
 export type UploadedImage = {
     url: string;
@@ -10,19 +13,24 @@ export type UploadedImage = {
     height: number;
     bytes: number;
     mimeType: string;
+    cosTaskId?: string;
 };
+
+type ImageUploadOptions = { kind?: CosMediaKind; fileName?: string; enqueueCos?: boolean };
 
 const store = localforage.createInstance({ name: "infinite-canvas", storeName: "image_files" });
 const objectUrls = new Map<string, string>();
 
-export async function uploadImage(input: string | Blob): Promise<UploadedImage> {
+export async function uploadImage(input: string | Blob, options: ImageUploadOptions = {}): Promise<UploadedImage> {
     const blob = typeof input === "string" ? await (await fetch(input)).blob() : input;
     const storageKey = `image:${nanoid()}`;
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
     const meta = await readImageMeta(url);
-    return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType: blob.type || meta.mimeType };
+    const mimeType = blob.type || meta.mimeType;
+    const cosTaskId = options.enqueueCos === false ? undefined : enqueueCosUpload({ storageKey, fileName: options.fileName || `image.${mimeExtension(mimeType)}`, mimeType, mediaKind: options.kind || "images" });
+    return { url, storageKey, width: meta.width, height: meta.height, bytes: blob.size, mimeType, cosTaskId };
 }
 
 export async function resolveImageUrl(storageKey?: string, fallback = "") {
@@ -44,6 +52,7 @@ export async function setImageBlob(storageKey: string, blob: Blob) {
     await store.setItem(storageKey, blob);
     const url = URL.createObjectURL(blob);
     objectUrls.set(storageKey, url);
+    enqueueCosUpload({ storageKey, fileName: `image.${mimeExtension(blob.type || "image/png")}`, mimeType: blob.type || "image/png", mediaKind: "images" });
     return url;
 }
 
@@ -59,9 +68,16 @@ export async function deleteStoredImages(keys: Iterable<string>) {
             const url = objectUrls.get(key);
             if (url) URL.revokeObjectURL(url);
             objectUrls.delete(key);
+            useCosUploadStore.getState().cancelByStorageKey(key);
             await store.removeItem(key);
         }),
     );
+}
+
+function mimeExtension(mimeType: string) {
+    if (mimeType === "image/jpeg") return "jpg";
+    if (mimeType === "image/svg+xml") return "svg";
+    return mimeType.split("/")[1]?.replace("+xml", "") || "png";
 }
 
 export async function cleanupUnusedImages(usedData: unknown) {

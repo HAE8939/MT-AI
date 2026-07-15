@@ -54,7 +54,7 @@ export function CanvasLocalAgentPanel({ embedded, headless, autoConnect }: { emb
     const connectedRef = useRef(false);
     const errorLoggedRef = useRef(false);
     const attachmentUrlsRef = useRef(new Set<string>());
-    const clientIdRef = useRef(typeof crypto === "undefined" ? `${Date.now()}` : crypto.randomUUID());
+    const clientIdRef = useRef(typeof crypto === "undefined" || typeof crypto.randomUUID !== "function" ? `${Date.now()}` : crypto.randomUUID());
     const endpoint = useMemo(() => url.trim().replace(/\/$/, ""), [url]);
     const urlAgentAutoConnect = searchParams.has("agentUrl") && searchParams.has("agentToken");
     const loadThreads = useCallback(async () => {
@@ -1042,7 +1042,7 @@ function formatThreadTime(value?: number) {
 }
 
 function createId() {
-    return typeof crypto === "undefined" ? `${Date.now()}-${Math.random()}` : crypto.randomUUID();
+    return typeof crypto === "undefined" || typeof crypto.randomUUID !== "function" ? `${Date.now()}-${Math.random()}` : crypto.randomUUID();
 }
 
 function clamp(value: number, min: number, max: number) {

@@ -3,8 +3,12 @@ import { useEffect, useRef } from "react";
 import { App } from "antd";
 
 import { createModelChannel, useConfigStore } from "@/stores/use-config-store";
+import { useWorkflowTaskRunner } from "@/hooks/use-workflow-task-runner";
+import { useCosUploadRunner } from "@/hooks/use-cos-upload-runner";
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
+    useWorkflowTaskRunner();
+    useCosUploadRunner();
     const { message } = App.useApp();
     const handledConfigParams = useRef(false);
     const updateConfig = useConfigStore((state) => state.updateConfig);

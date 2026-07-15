@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { Button, Modal, Segmented, Slider } from "antd";
 import { RotateCcw, WandSparkles } from "lucide-react";
+import { MultiAngleCameraPreview } from "@/components/canvas/multi-angle-camera-preview";
+import type { MultiAngleParams } from "@/types/ai-workflow";
 
 export type CanvasImageAngleParams = {
     horizontalAngle: number;
@@ -8,6 +10,7 @@ export type CanvasImageAngleParams = {
     cameraDistance: number;
     wideAngle: boolean;
 };
+export type CanvasImageAngleAction = { mode: "generic"; params: CanvasImageAngleParams } | { mode: "workflow"; params: MultiAngleParams };
 
 const defaultParams: CanvasImageAngleParams = {
     horizontalAngle: 0,
@@ -15,12 +18,19 @@ const defaultParams: CanvasImageAngleParams = {
     cameraDistance: 4.8,
     wideAngle: false,
 };
+const defaultWorkflowParams: MultiAngleParams = { camera1: { horizontal: 315, vertical: 0, zoom: 5 }, camera2: { horizontal: 45, vertical: 30, zoom: 5 } };
 
-export function CanvasNodeAngleDialog({ dataUrl, open, onClose, onConfirm }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (params: CanvasImageAngleParams) => void }) {
+export function CanvasNodeAngleDialog({ dataUrl, open, onClose, onConfirm }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (action: CanvasImageAngleAction) => void }) {
+    const [mode, setMode] = useState<"generic" | "workflow">("generic");
     const [params, setParams] = useState(defaultParams);
+    const [workflowParams, setWorkflowParams] = useState(defaultWorkflowParams);
 
     useEffect(() => {
-        if (open) setParams(defaultParams);
+        if (open) {
+            setMode("generic");
+            setParams(defaultParams);
+            setWorkflowParams(defaultWorkflowParams);
+        }
     }, [dataUrl, open]);
 
     const update = <Key extends keyof CanvasImageAngleParams>(key: Key, value: CanvasImageAngleParams[Key]) => setParams((current) => ({ ...current, [key]: value }));
@@ -32,6 +42,13 @@ export function CanvasNodeAngleDialog({ dataUrl, open, onClose, onConfirm }: { d
                     <h2 className="text-xl font-semibold">AI 多角度</h2>
                     <p className="mt-1 text-sm opacity-60">左侧只预览方向，结果会基于原图重新生成</p>
                 </div>
+                <Segmented block value={mode} options={[{ label: "通用模型", value: "generic" }, { label: "BizyAir 双相机", value: "workflow" }]} onChange={(value) => setMode(value as "generic" | "workflow")} />
+                {mode === "workflow" ? (
+                    <div className="grid gap-6 md:grid-cols-[minmax(280px,1fr)_390px]">
+                        <div><MultiAngleCameraPreview params={workflowParams} open={open && mode === "workflow"} /><div className="mt-2 flex gap-4 text-xs"><span className="text-green-500">相机 1</span><span className="text-sky-500">相机 2</span></div></div>
+                        <div className="space-y-5"><CameraControls label="相机 1" value={workflowParams.camera1} onChange={(camera1) => setWorkflowParams((current) => ({ ...current, camera1 }))} /><CameraControls label="相机 2" value={workflowParams.camera2} onChange={(camera2) => setWorkflowParams((current) => ({ ...current, camera2 }))} /></div>
+                    </div>
+                ) : (
                 <div className="grid gap-6 md:grid-cols-[minmax(260px,1fr)_360px]">
                     <div className="flex min-h-[300px] flex-col justify-between rounded-xl border p-4">
                         <div className="grid flex-1 place-items-center">
@@ -62,14 +79,20 @@ export function CanvasNodeAngleDialog({ dataUrl, open, onClose, onConfirm }: { d
                         </div>
                     </div>
                 </div>
+                )}
                 <div className="flex justify-end">
-                    <Button type="primary" size="large" icon={<WandSparkles className="size-4" />} onClick={() => onConfirm(params)}>
-                        AI 生成
+                    <Button type="primary" size="large" icon={<WandSparkles className="size-4" />} onClick={() => onConfirm(mode === "generic" ? { mode: "generic", params } : { mode: "workflow", params: workflowParams })}>
+                        {mode === "workflow" ? "生成两个视角" : "AI 生成"}
                     </Button>
                 </div>
             </div>
         </Modal>
     );
+}
+
+function CameraControls({ label, value, onChange }: { label: string; value: MultiAngleParams["camera1"]; onChange: (value: MultiAngleParams["camera1"]) => void }) {
+    const update = (key: keyof typeof value, next: number) => onChange({ ...value, [key]: next });
+    return <div className="space-y-3 rounded-lg border p-3"><div className="text-sm font-semibold">{label}</div><AngleSlider label="水平" value={value.horizontal} min={0} max={359} step={1} suffix="°" onChange={(next) => update("horizontal", next)} /><AngleSlider label="垂直" value={value.vertical} min={-60} max={60} step={1} suffix="°" onChange={(next) => update("vertical", next)} /><AngleSlider label="距离" value={value.zoom} min={1} max={10} step={0.1} onChange={(next) => update("zoom", next)} /></div>;
 }
 
 function AngleSlider({ label, value, min, max, step, suffix = "", onChange }: { label: string; value: number; min: number; max: number; step: number; suffix?: string; onChange: (value: number) => void }) {
