@@ -1,16 +1,24 @@
 import { useEffect } from "react";
 
-import { compressImageToMaxSize } from "@/lib/image-compress";
-import { pollBizyAirWorkflow, submitBizyAirWorkflow } from "@/services/api/bizyair-workflows";
-import { imageToDataUrl } from "@/services/image-storage";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
-import { useConfigStore } from "@/stores/use-config-store";
 import { useWorkflowTaskStore } from "@/stores/use-workflow-task-store";
-import type { AiWorkflowTask, DrawingRenderParams, MultiAngleParams, UpscaleWorkflowParams } from "@/types/ai-workflow";
+import type { AiWorkflowTask } from "@/types/ai-workflow";
 
 const runningTasks = new Map<string, AbortController>();
 const POLL_INTERVAL_MS = 5000;
 const POLL_DEADLINE_MS = 30 * 60 * 1000;
+
+/** 任务执行器：由各 Provider 注册提交/轮询实现（阶段 2 填充） */
+export type WorkflowTaskExecutor = {
+    submit: (task: AiWorkflowTask, signal: AbortSignal) => Promise<{ status: "polling" | "succeeded" | "failed"; externalTaskId?: string; resultUrls?: string[]; error?: string }>;
+    poll: (task: AiWorkflowTask, externalTaskId: string, signal: AbortSignal) => Promise<{ status: "polling" | "succeeded" | "failed"; resultUrls?: string[]; progress?: number; error?: string }>;
+};
+
+const taskExecutors = new Map<string, WorkflowTaskExecutor>();
+
+export function registerWorkflowTaskExecutor(type: string, executor: WorkflowTaskExecutor) {
+    taskExecutors.set(type, executor);
+}
 
 export function useWorkflowTaskRunner() {
     const hydrated = useWorkflowTaskStore((state) => state.hydrated);
@@ -21,6 +29,7 @@ export function useWorkflowTaskRunner() {
         if (!hydrated || !canvasHydrated) return;
         tasks.forEach((task) => {
             if (task.type === "image-generation") return;
+            if (!taskExecutors.has(task.type)) return;
             if (!["queued", "submitting", "polling"].includes(task.status) || runningTasks.has(task.id)) return;
             const controller = new AbortController();
             runningTasks.set(task.id, controller);
@@ -35,24 +44,23 @@ export function useWorkflowTaskRunner() {
 
 async function runTask(task: AiWorkflowTask, signal: AbortSignal) {
     const taskStore = useWorkflowTaskStore.getState();
-    const config = useConfigStore.getState().workflowConfig.bizyair;
-    if (!config.baseUrl.trim() || !config.apiKey.trim()) return taskStore.updateTask(task.id, { status: "failed", error: "请先配置 BizyAir 专业工作流" });
+    const executor = taskExecutors.get(task.type);
+    if (!executor) return taskStore.updateTask(task.id, { status: "failed", error: "没有可用的任务执行器" });
     try {
         let externalTaskId = task.externalTaskId;
         if (!externalTaskId) {
             taskStore.updateTask(task.id, { status: "submitting", error: undefined });
-            const input = await buildWorkflowInput(task);
-            const submitted = await submitBizyAirWorkflow(config, input, signal);
+            const submitted = await executor.submit(task, signal);
             if (submitted.status === "failed") return taskStore.updateTask(task.id, { status: "failed", error: submitted.error || "任务提交失败" });
-            if (submitted.status === "succeeded") return taskStore.updateTask(task.id, { status: "succeeded", resultUrls: submitted.resultUrls, externalTaskId: submitted.externalTaskId });
+            if (submitted.status === "succeeded") return taskStore.updateTask(task.id, { status: "succeeded", resultUrls: submitted.resultUrls || [], externalTaskId: submitted.externalTaskId });
             externalTaskId = submitted.externalTaskId;
             if (!externalTaskId) return taskStore.updateTask(task.id, { status: "failed", error: "任务提交后未返回 ID" });
             taskStore.updateTask(task.id, { status: "polling", externalTaskId });
         }
         const deadline = Date.now() + POLL_DEADLINE_MS;
         while (!signal.aborted && Date.now() < deadline) {
-            const result = await pollBizyAirWorkflow(config, externalTaskId, signal);
-            if (result.status === "succeeded") return taskStore.updateTask(task.id, { status: "succeeded", resultUrls: result.resultUrls, progress: 100 });
+            const result = await executor.poll(task, externalTaskId, signal);
+            if (result.status === "succeeded") return taskStore.updateTask(task.id, { status: "succeeded", resultUrls: result.resultUrls || [], progress: 100 });
             if (result.status === "failed") return taskStore.updateTask(task.id, { status: "failed", error: result.error || "任务执行失败" });
             if (result.progress != null) taskStore.updateTask(task.id, { progress: result.progress });
             await wait(POLL_INTERVAL_MS, signal);
@@ -62,26 +70,6 @@ async function runTask(task: AiWorkflowTask, signal: AbortSignal) {
         if (signal.aborted) return;
         taskStore.updateTask(task.id, { status: "failed", error: requestErrorMessage(error) });
     }
-}
-
-async function buildWorkflowInput(task: AiWorkflowTask) {
-    const project = useCanvasStore.getState().projects.find((item) => item.id === task.projectId);
-    const source = project?.nodes.find((node) => node.id === task.sourceNodeId);
-    if (!project || !source?.metadata?.content) throw new Error("源画布或图片节点已不存在");
-    const sourceImage = await imageToDataUrl({ storageKey: source.metadata.storageKey, url: source.metadata.content });
-    if (!sourceImage) throw new Error("无法读取源图片");
-    if (task.type === "drawing-render") {
-        const params = task.params as DrawingRenderParams;
-        let referenceImage = params.referenceDataUrl;
-        if (!referenceImage) {
-            const reference = params.referenceNodeId ? project.nodes.find((node) => node.id === params.referenceNodeId) : source;
-            referenceImage = reference?.metadata?.content ? (await imageToDataUrl({ storageKey: reference.metadata.storageKey, url: reference.metadata.content })) || sourceImage : sourceImage;
-        }
-        const [compressedSource, compressedReference] = await Promise.all([compressImageToMaxSize(sourceImage), compressImageToMaxSize(referenceImage)]);
-        return { type: "drawing-render" as const, sourceImage: compressedSource.dataUrl, referenceImage: compressedReference.dataUrl, params };
-    }
-    if (task.type === "multi-angle") return { type: "multi-angle" as const, sourceImage, params: task.params as MultiAngleParams };
-    return { type: "upscale" as const, sourceImage, params: task.params as UpscaleWorkflowParams };
 }
 
 function wait(ms: number, signal: AbortSignal) {
@@ -96,5 +84,5 @@ function wait(ms: number, signal: AbortSignal) {
 
 function requestErrorMessage(error: unknown) {
     if (error instanceof Error) return error.message;
-    return "专业工作流请求失败";
+    return "任务请求失败";
 }

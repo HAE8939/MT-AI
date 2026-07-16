@@ -1,25 +1,5 @@
-export type AiWorkflowType = "drawing-render" | "multi-angle" | "upscale" | "image-generation";
+export type AiWorkflowType = "image-generation" | "runninghub";
 export type AiWorkflowStatus = "queued" | "submitting" | "polling" | "running" | "succeeded" | "failed" | "cancelled";
-
-export type DrawingRenderParams = {
-    template: "photography" | "custom";
-    customPrompt: string;
-    description: string;
-    referenceNodeId?: string;
-    /** 本地上传的参考图 dataURL，优先于 referenceNodeId */
-    referenceDataUrl?: string;
-    styleStrength: number;
-    outputQuality: number;
-};
-
-export type MultiAngleParams = {
-    camera1: { horizontal: number; vertical: number; zoom: number };
-    camera2: { horizontal: number; vertical: number; zoom: number };
-};
-
-export type UpscaleWorkflowParams = {
-    targetResolution: 2048 | 4096;
-};
 
 /** 画布常规 AI 生图任务的轻量登记参数 */
 export type ImageGenerationParams = {
@@ -29,7 +9,15 @@ export type ImageGenerationParams = {
     count?: number;
 };
 
-export type AiWorkflowParams = DrawingRenderParams | MultiAngleParams | UpscaleWorkflowParams | ImageGenerationParams;
+/** RunningHub 云工作流任务：workflowId + 已解析的 nodeInfoList 覆盖项 */
+export type RunningHubTaskParams = {
+    workflowId: string;
+    nodeInfoList: Array<{ nodeId: string; fieldName: string; fieldValue: string }>;
+    /** 模板 id，仅用于展示 */
+    agentTemplateId?: string;
+};
+
+export type AiWorkflowParams = ImageGenerationParams | RunningHubTaskParams;
 
 export type AiWorkflowTask = {
     id: string;
@@ -50,22 +38,4 @@ export type AiWorkflowTask = {
     error?: string;
     createdAt: string;
     updatedAt: string;
-};
-
-export type BizyAirWorkflowConfig = {
-    baseUrl: string;
-    apiKey: string;
-};
-
-export type BizyAirWorkflowInput =
-    | { type: "drawing-render"; sourceImage: string; referenceImage: string; params: DrawingRenderParams }
-    | { type: "multi-angle"; sourceImage: string; params: MultiAngleParams }
-    | { type: "upscale"; sourceImage: string; params: UpscaleWorkflowParams };
-
-export type BizyAirWorkflowResult = {
-    status: "polling" | "succeeded" | "failed";
-    externalTaskId?: string;
-    resultUrls: string[];
-    progress?: number;
-    error?: string;
 };

@@ -1,8 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { App, Badge, Button, Drawer, Empty, Image, Progress, Tooltip } from "antd";
-import { ArrowUpRight, Clock3, Copy, Crosshair, Download, ImageDown, RotateCcw, Trash2, Video, X } from "lucide-react";
-import localforage from "localforage";
+import { Clock3, Copy, Crosshair, Download, ImageDown, RotateCcw, Trash2, X } from "lucide-react";
 
 import { copyTaskImageToClipboard, downloadTaskImage, downloadTaskImageWithCaption } from "@/lib/workflow-task-image";
 import { resolveImageUrl } from "@/services/image-storage";
@@ -11,10 +10,8 @@ import { useWorkflowTaskStore } from "@/stores/use-workflow-task-store";
 import type { AiWorkflowStatus, AiWorkflowTask, AiWorkflowType } from "@/types/ai-workflow";
 
 const typeLabels: Record<AiWorkflowType, string> = {
-    "drawing-render": "图纸渲染",
-    "multi-angle": "双相机多角度",
-    upscale: "AI 超分",
     "image-generation": "画布生图",
+    runninghub: "云工作流",
 };
 
 const statusLabels: Record<AiWorkflowStatus, string> = {
@@ -29,21 +26,17 @@ const statusLabels: Record<AiWorkflowStatus, string> = {
 
 const ACTIVE_STATUSES: AiWorkflowStatus[] = ["queued", "submitting", "polling", "running"];
 
-export function WorkflowTaskCenter() {
+/** 任务列表主体：任务中心抽屉与「我的→生成记录」共用 */
+export function WorkflowTaskList({ onNavigate }: { onNavigate?: () => void }) {
     const { message } = App.useApp();
     const navigate = useNavigate();
-    const [open, setOpen] = useState(false);
     const tasks = useWorkflowTaskStore((state) => state.tasks);
     const cancelTask = useWorkflowTaskStore((state) => state.cancelTask);
     const retryTask = useWorkflowTaskStore((state) => state.retryTask);
     const removeTask = useWorkflowTaskStore((state) => state.removeTask);
-    const clearCompletedTasks = useWorkflowTaskStore((state) => state.clearCompletedTasks);
     const projects = useCanvasStore((state) => state.projects);
     const projectTitles = useMemo(() => new Map(projects.map((project) => [project.id, project.title])), [projects]);
     const currentProjectId = useCurrentProjectId();
-    const videoSummary = useVideoLogSummary(open);
-    const activeCount = tasks.filter((task) => ACTIVE_STATUSES.includes(task.status)).length;
-    const failedCount = tasks.filter((task) => task.status === "failed").length;
 
     const locateTask = (task: AiWorkflowTask) => {
         const nodeId = task.targetNodeIds[0];
@@ -55,13 +48,43 @@ export function WorkflowTaskCenter() {
             message.warning("对应画布已删除，无法定位");
             return;
         }
-        setOpen(false);
+        onNavigate?.();
         if (task.projectId === currentProjectId) {
             window.dispatchEvent(new CustomEvent("canvas:focus-node", { detail: { projectId: task.projectId, nodeId } }));
         } else {
             navigate(`/canvas/${task.projectId}?focus=${encodeURIComponent(nodeId)}`);
         }
     };
+
+    return (
+        <>
+            {!tasks.length ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务" /> : null}
+            <Image.PreviewGroup>
+                <div className="divide-y divide-stone-200 dark:divide-stone-800">
+                    {tasks.map((task) => (
+                        <WorkflowTaskCard
+                            key={task.id}
+                            task={task}
+                            projectTitle={projectTitles.get(task.projectId)}
+                            crossProject={task.projectId !== currentProjectId}
+                            onCancel={() => cancelTask(task.id)}
+                            onRetry={() => retryTask(task.id)}
+                            onRemove={() => removeTask(task.id)}
+                            onLocate={() => locateTask(task)}
+                        />
+                    ))}
+                </div>
+            </Image.PreviewGroup>
+        </>
+    );
+}
+
+export function WorkflowTaskCenter() {
+    const [open, setOpen] = useState(false);
+    const tasks = useWorkflowTaskStore((state) => state.tasks);
+    const clearCompletedTasks = useWorkflowTaskStore((state) => state.clearCompletedTasks);
+    const activeCount = tasks.filter((task) => ACTIVE_STATUSES.includes(task.status)).length;
+    const failedCount = tasks.filter((task) => task.status === "failed").length;
 
     return (
         <>
@@ -77,30 +100,7 @@ export function WorkflowTaskCenter() {
                 width={460}
                 extra={tasks.some((task) => ["succeeded", "cancelled"].includes(task.status)) ? <Button type="text" size="small" onClick={clearCompletedTasks}>清理已结束</Button> : null}
             >
-                {!tasks.length && !videoSummary?.total ? <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="暂无任务" /> : null}
-                <Image.PreviewGroup>
-                    <div className="divide-y divide-stone-200 dark:divide-stone-800">
-                        {tasks.map((task) => (
-                            <WorkflowTaskCard
-                                key={task.id}
-                                task={task}
-                                projectTitle={projectTitles.get(task.projectId)}
-                                crossProject={task.projectId !== currentProjectId}
-                                onCancel={() => cancelTask(task.id)}
-                                onRetry={() => retryTask(task.id)}
-                                onRemove={() => removeTask(task.id)}
-                                onLocate={() => locateTask(task)}
-                            />
-                        ))}
-                    </div>
-                </Image.PreviewGroup>
-                <VideoLogSection
-                    summary={videoSummary}
-                    onOpen={() => {
-                        setOpen(false);
-                        navigate("/video");
-                    }}
-                />
+                <WorkflowTaskList onNavigate={() => setOpen(false)} />
             </Drawer>
         </>
     );
@@ -266,54 +266,3 @@ function formatTaskTime(createdAt: string, updatedAt: string) {
     return `${Math.floor(seconds / 60)} 分 ${seconds % 60} 秒`;
 }
 
-type VideoLogSummary = { total: number; running: number; failed: number };
-
-const videoLogStore = localforage.createInstance({ name: "infinite-canvas", storeName: "video_generation_logs" });
-
-/** 只读聚合视频生成记录（数据仍归视频页所有，这里仅统计） */
-function useVideoLogSummary(open: boolean): VideoLogSummary | null {
-    const [summary, setSummary] = useState<VideoLogSummary | null>(null);
-    useEffect(() => {
-        if (!open) return;
-        let cancelled = false;
-        const read = async () => {
-            const result: VideoLogSummary = { total: 0, running: 0, failed: 0 };
-            try {
-                await videoLogStore.iterate<{ status?: string }, void>((value) => {
-                    result.total += 1;
-                    if (value?.status === "生成中") result.running += 1;
-                    if (value?.status === "失败") result.failed += 1;
-                });
-            } catch {
-                if (!cancelled) setSummary(null);
-                return;
-            }
-            if (!cancelled) setSummary(result);
-        };
-        void read();
-        return () => {
-            cancelled = true;
-        };
-    }, [open]);
-    return summary;
-}
-
-function VideoLogSection({ summary, onOpen }: { summary: VideoLogSummary | null; onOpen: () => void }) {
-    if (!summary || !summary.total) return null;
-    return (
-        <div className="mt-4 border-t border-stone-200 pt-4 dark:border-stone-800">
-            <button type="button" className="flex w-full items-center gap-3 rounded-lg px-1 py-2 text-left transition hover:bg-stone-100 dark:hover:bg-stone-800/60" onClick={onOpen}>
-                <span className="grid size-9 shrink-0 place-items-center rounded-lg bg-stone-100 text-stone-500 dark:bg-stone-800">
-                    <Video className="size-4" />
-                </span>
-                <span className="min-w-0 flex-1">
-                    <span className="block text-sm font-semibold">视频生成记录</span>
-                    <span className="mt-0.5 block truncate text-xs text-stone-500">
-                        共 {summary.total} 条{summary.running ? ` · ${summary.running} 生成中` : ""}{summary.failed ? ` · ${summary.failed} 失败` : ""}
-                    </span>
-                </span>
-                <ArrowUpRight className="size-4 shrink-0 text-stone-400" />
-            </button>
-        </div>
-    );
-}

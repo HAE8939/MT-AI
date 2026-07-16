@@ -28,11 +28,9 @@ type CanvasNodeHoverToolbarProps = {
     onCrop: (node: CanvasNodeData) => void;
     onSplit: (node: CanvasNodeData) => void;
     onUpscale: (node: CanvasNodeData) => void;
-    onSuperResolve: (node: CanvasNodeData) => void;
     onAngle: (node: CanvasNodeData) => void;
     onPanorama: (node: CanvasNodeData) => void;
     onPanoramaGenerate: (node: CanvasNodeData) => void;
-    onDrawingRender: (node: CanvasNodeData) => void;
     onAnnotate: (node: CanvasNodeData) => void;
     onViewImage: (node: CanvasNodeData) => void;
     onReversePrompt: (node: CanvasNodeData) => void;
@@ -69,11 +67,9 @@ export function CanvasNodeHoverToolbar({
     onCrop,
     onSplit,
     onUpscale,
-    onSuperResolve,
     onAngle,
     onPanorama,
     onPanoramaGenerate,
-    onDrawingRender,
     onAnnotate,
     onViewImage,
     onReversePrompt,
@@ -120,7 +116,7 @@ export function CanvasNodeHoverToolbar({
     const isText = node.type === CanvasNodeType.Text;
     const isConfig = node.type === CanvasNodeType.Config;
     const canOpenDialog = isText || hasImage || isVideo;
-    const canRetry = node.metadata?.status === "error" || (isText && Boolean(node.metadata?.roleId) && node.metadata?.status !== "loading");
+    const canRetry = node.metadata?.status === "error" || (isText && Boolean(node.metadata?.agentTemplateId) && node.metadata?.status !== "loading");
     const quickImageToolIdSet = new Set(quickImageToolIds);
     const copyImagePrompt = (target: CanvasNodeData) => {
         const prompt = target.metadata?.prompt?.trim();
@@ -130,7 +126,7 @@ export function CanvasNodeHoverToolbar({
         }
         copyText(prompt, "提示词已复制");
     };
-    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onAnnotate, onMaskEdit, onCrop, onSplit, onUpscale, onSuperResolve, onAngle, onPanorama, onPanoramaGenerate, onDrawingRender, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt });
+    const imageTools = buildImageToolbarTools(node, { onUpload, onToggleFreeResize, onAnnotate, onMaskEdit, onCrop, onSplit, onUpscale, onAngle, onPanorama, onPanoramaGenerate, onViewImage, onCopyPrompt: copyImagePrompt, onReversePrompt });
 
     function openImageToolSettings() {
         onKeep(activeNode.id);

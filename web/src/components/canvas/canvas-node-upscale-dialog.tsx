@@ -6,7 +6,7 @@ import { readImageMeta } from "@/lib/image-utils";
 import { MAX_UPSCALE_LONG_EDGE, resolveUpscaleSize, type ImageUpscaleAlgorithm, type ImageUpscaleParams } from "@/lib/canvas/canvas-image-data";
 
 export type CanvasImageUpscaleParams = ImageUpscaleParams;
-export type CanvasImageUpscaleAction = { mode: "local"; params: CanvasImageUpscaleParams } | { mode: "ai"; targetResolution: 2048 | 4096 };
+export type CanvasImageUpscaleAction = { mode: "local"; params: CanvasImageUpscaleParams };
 
 const algorithms: Array<{ value: ImageUpscaleAlgorithm; title: string; description: string }> = [
     { value: "high", title: "高清插值", description: "适合照片和细节图" },
@@ -25,8 +25,7 @@ const defaultParams: CanvasImageUpscaleParams = {
     algorithm: "high",
 };
 
-export function CanvasNodeUpscaleDialog({ dataUrl, open, defaultMode = "local", onClose, onConfirm }: { dataUrl: string; open: boolean; defaultMode?: "local" | "ai"; onClose: () => void; onConfirm: (action: CanvasImageUpscaleAction) => void }) {
-    const [mode, setMode] = useState<"local" | "ai">(defaultMode);
+export function CanvasNodeUpscaleDialog({ dataUrl, open, onClose, onConfirm }: { dataUrl: string; open: boolean; onClose: () => void; onConfirm: (action: CanvasImageUpscaleAction) => void }) {
     const [params, setParams] = useState<CanvasImageUpscaleParams>(defaultParams);
     const [image, setImage] = useState<{ width: number; height: number } | null>(null);
     const sourceLongEdge = image ? Math.max(image.width, image.height) : 0;
@@ -36,10 +35,9 @@ export function CanvasNodeUpscaleDialog({ dataUrl, open, defaultMode = "local", 
 
     useEffect(() => {
         if (!open) return;
-        setMode(defaultMode);
         setParams(defaultParams);
         setImage(null);
-    }, [dataUrl, defaultMode, open]);
+    }, [dataUrl, open]);
 
     useEffect(() => {
         if (!open) return;
@@ -57,17 +55,8 @@ export function CanvasNodeUpscaleDialog({ dataUrl, open, defaultMode = "local", 
             <div className="space-y-5">
                 <div>
                     <h2 className="text-xl font-semibold">图片放大</h2>
+                    <p className="mt-1 text-sm opacity-60">本地插值放大，不消耗 API 额度</p>
                 </div>
-                <Segmented
-                    block
-                    value={mode}
-                    options={[{ label: "本地放大", value: "local" }, { label: "AI 超分", value: "ai" }]}
-                    onChange={(value) => {
-                        const nextMode = value as "local" | "ai";
-                        setMode(nextMode);
-                        if (nextMode === "ai" && params.targetLongEdge < 2048) setParams((current) => ({ ...current, targetLongEdge: 2048 }));
-                    }}
-                />
                 <div className="grid gap-6 md:grid-cols-[minmax(260px,1fr)_360px]">
                     <div className="rounded-xl border p-4">
                         <div className="grid min-h-[280px] place-items-center rounded-lg bg-black/5">
@@ -84,12 +73,12 @@ export function CanvasNodeUpscaleDialog({ dataUrl, open, defaultMode = "local", 
                             <Segmented
                                 block
                                 value={params.targetLongEdge}
-                                options={targetOptions.filter((option) => mode === "local" || option.value >= 2048).map((option) => ({ label: `${option.label} · ${option.value}px`, value: option.value, disabled: Boolean(image && sourceLongEdge >= option.value) }))}
+                                options={targetOptions.map((option) => ({ label: `${option.label} · ${option.value}px`, value: option.value, disabled: Boolean(image && sourceLongEdge >= option.value) }))}
                                 onChange={(value) => setParams((current) => ({ ...current, targetLongEdge: Number(value) }))}
                             />
                             {image && !canUpscale ? <div className="text-xs font-medium text-[#ef4444]">{reachedMax ? "图片已达到 4K，无需放大" : "图片已达到当前目标像素，无需放大"}</div> : null}
                         </div>
-                        {mode === "local" ? <div className="space-y-2">
+                        <div className="space-y-2">
                             <div className="font-medium opacity-75">放大算法</div>
                             <Segmented
                                 block
@@ -105,7 +94,7 @@ export function CanvasNodeUpscaleDialog({ dataUrl, open, defaultMode = "local", 
                                 }))}
                                 onChange={(value) => setParams((current) => ({ ...current, algorithm: value as ImageUpscaleAlgorithm }))}
                             />
-                        </div> : <div className="rounded-xl border px-4 py-3 text-sm leading-6 opacity-70">AI 超分使用 BizyAir 专业工作流，任务可在切换页面或刷新后继续执行。</div>}
+                        </div>
                         <div className="rounded-xl border px-4 py-3 text-sm">
                             <div className="flex items-center justify-between">
                                 <span className="opacity-60">输出尺寸</span>
@@ -115,8 +104,8 @@ export function CanvasNodeUpscaleDialog({ dataUrl, open, defaultMode = "local", 
                     </div>
                 </div>
                 <div className="flex justify-end">
-                    <Button type="primary" size="large" icon={<ImagePlus className="size-4" />} disabled={!canUpscale} onClick={() => onConfirm(mode === "local" ? { mode: "local", params } : { mode: "ai", targetResolution: params.targetLongEdge >= 4096 ? 4096 : 2048 })}>
-                        {mode === "ai" ? "提交 AI 超分" : "生成放大图"}
+                    <Button type="primary" size="large" icon={<ImagePlus className="size-4" />} disabled={!canUpscale} onClick={() => onConfirm({ mode: "local", params })}>
+                        生成放大图
                     </Button>
                 </div>
             </div>

@@ -1,9 +1,9 @@
 import type { ReactNode } from "react";
-import { Brush, Building2, Camera, Copy, FileText, Grid2x2, Lock, LockOpen, Maximize2, Pencil, ScanLine, Scissors, Sparkles, Upload, View, ZoomIn } from "lucide-react";
+import { Brush, Camera, Copy, FileText, Grid2x2, Lock, LockOpen, Maximize2, Pencil, ScanLine, Scissors, Upload, View, ZoomIn } from "lucide-react";
 
 import type { CanvasNodeData } from "@/types/canvas";
 
-export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "annotate" | "maskEdit" | "crop" | "split" | "upscale" | "superResolve" | "angle" | "drawingRender" | "panoramaGenerate" | "panorama" | "view";
+export type ImageNodeActionToolId = "copyPrompt" | "reversePrompt" | "replace" | "resize" | "annotate" | "maskEdit" | "crop" | "split" | "upscale" | "angle" | "panoramaGenerate" | "panorama" | "view";
 export type ImageQuickToolId = "info" | "delete" | "saveAsset" | "download" | "edit" | ImageNodeActionToolId;
 
 export type ImageToolHandlers = {
@@ -13,11 +13,9 @@ export type ImageToolHandlers = {
     onCrop: (node: CanvasNodeData) => void;
     onSplit: (node: CanvasNodeData) => void;
     onUpscale: (node: CanvasNodeData) => void;
-    onSuperResolve: (node: CanvasNodeData) => void;
     onAngle: (node: CanvasNodeData) => void;
     onPanorama: (node: CanvasNodeData) => void;
     onPanoramaGenerate: (node: CanvasNodeData) => void;
-    onDrawingRender: (node: CanvasNodeData) => void;
     onAnnotate: (node: CanvasNodeData) => void;
     onViewImage: (node: CanvasNodeData) => void;
     onCopyPrompt: (node: CanvasNodeData) => void;
@@ -128,15 +126,6 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
         run: (node, handlers) => handlers.onUpscale(node),
     },
     {
-        id: "superResolve",
-        defaultVisible: false,
-        panelLabel: "超分",
-        label: "超分",
-        title: "AI 超分",
-        icon: () => <Sparkles className="size-4" />,
-        run: (node, handlers) => handlers.onSuperResolve(node),
-    },
-    {
         id: "angle",
         defaultVisible: false,
         panelLabel: "多角度",
@@ -162,15 +151,6 @@ export const imageToolDefinitions: ImageToolDefinition[] = [
         title: "补全为 2:1 等距柱状全景图",
         icon: () => <View className="size-4" />,
         run: (node, handlers) => handlers.onPanoramaGenerate(node),
-    },
-    {
-        id: "drawingRender",
-        defaultVisible: true,
-        panelLabel: "图纸渲染",
-        label: "图纸渲染",
-        title: "将草图或 SU 截图渲染为写实效果图",
-        icon: () => <Building2 className="size-4" />,
-        run: (node, handlers) => handlers.onDrawingRender(node),
     },
     {
         id: "view",
