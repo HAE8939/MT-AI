@@ -1,30 +1,25 @@
-import { FileText, ImagePlus, Images, Maximize2, Settings2, Video } from "lucide-react";
+import { Maximize2, Settings2, Sparkles, UserRound, Workflow } from "lucide-react";
 
 export const navigationTools = [
     {
         slug: "canvas",
-        label: "我的画布",
+        label: "画布",
         icon: Maximize2,
     },
     {
-        slug: "image",
-        label: "生图工作台",
-        icon: ImagePlus,
+        slug: "agents",
+        label: "智能体",
+        icon: Workflow,
     },
     {
-        slug: "video",
-        label: "视频创作台",
-        icon: Video,
+        slug: "plaza",
+        label: "灵感广场",
+        icon: Sparkles,
     },
     {
-        slug: "prompts",
-        label: "提示词库",
-        icon: FileText,
-    },
-    {
-        slug: "assets",
-        label: "我的素材",
-        icon: Images,
+        slug: "me",
+        label: "我的",
+        icon: UserRound,
     },
     {
         slug: "config",

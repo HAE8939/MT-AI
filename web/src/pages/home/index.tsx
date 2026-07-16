@@ -70,8 +70,8 @@ export default function IndexPage() {
                             <h2 className="text-3xl font-semibold text-stone-950 dark:text-stone-100">沉淀每一次好结果</h2>
                             <p className="mt-3 text-base leading-7 text-stone-500 dark:text-stone-400">收藏稳定出图的提示词、参考风格和结果图片，让下一次创作从已有经验开始。</p>
                         </div>
-                        <Button type="link" onClick={() => navigate("/prompts")} className="justify-self-center md:justify-self-end" icon={<ArrowRight className="size-4" />} iconPlacement="end">
-                            查看提示词库
+                        <Button type="link" onClick={() => navigate("/plaza")} className="justify-self-center md:justify-self-end" icon={<ArrowRight className="size-4" />} iconPlacement="end">
+                            逛灵感广场
                         </Button>
                     </div>
                     <div className="grid auto-rows-[210px] gap-4 md:grid-cols-4">

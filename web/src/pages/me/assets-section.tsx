@@ -31,7 +31,7 @@ const kindOptions = [
     { label: "视频", value: "video" },
 ];
 
-export default function AssetsPage() {
+export function AssetsSection() {
     const { message } = App.useApp();
     const copyText = useCopyText();
     const [form] = Form.useForm<AssetFormValues>();
@@ -284,15 +284,12 @@ export default function AssetsPage() {
     };
 
     return (
-        <div className="flex h-full flex-col overflow-hidden bg-background text-stone-900 dark:text-stone-100">
-            <main className="min-h-0 flex-1 overflow-y-auto bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-8 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.14)_1px,transparent_1px)]">
+        <div className="text-stone-900 dark:text-stone-100">
+            <div>
                 <div className="pb-8">
-                    <div className="mx-auto max-w-5xl text-center">
-                        <h1 className="text-4xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">我的素材</h1>
-                        <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">收藏常用文本和图片，按类型、标题和标签快速查找。支持批量导入，或直接把图片 / 视频拖入下方列表。</p>
-                    </div>
+                    <p className="text-sm text-stone-500 dark:text-stone-400">收藏常用文本和图片，按类型、标题和标签快速查找。支持批量导入，或直接把图片 / 视频拖入下方列表。</p>
 
-                    <div className="mx-auto mt-8 w-full max-w-2xl">
+                    <div className="mt-4 w-full max-w-2xl">
                         <Input.Search
                             className="w-full"
                             size="large"
@@ -444,7 +441,7 @@ export default function AssetsPage() {
                         />
                     </div>
                 </div>
-            </main>
+            </div>
 
             <Modal title={editingAsset ? "编辑素材" : "新增素材"} open={isAssetOpen} width={980} onCancel={() => setIsAssetOpen(false)} onOk={() => void saveAsset()} okText="保存" cancelText="取消" destroyOnHidden>
                 <div className="grid gap-6 pt-1 lg:grid-cols-[minmax(0,1fr)_320px]">

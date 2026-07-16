@@ -52,6 +52,9 @@ type PromptStore = {
 
 const PROMPT_STORE_KEY = "infinite-canvas:prompt_store";
 
+/** 灵感广场收藏条目的固定分组；与 scripts/build-gallery.mjs 精选子集使用同一分组名 */
+export const GALLERY_GROUP = "灵感精选";
+
 function createPromptId() {
     return `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }

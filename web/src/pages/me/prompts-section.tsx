@@ -1,4 +1,4 @@
-import { CopyPlus, Download, FolderCog, Plus, RotateCcw, Search, Sparkles, Upload } from "lucide-react";
+import { CopyPlus, Download, FolderCog, Plus, RotateCcw, Search, Upload } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { App, Button, Dropdown, Empty, Input, Modal, Spin, Tag } from "antd";
 
@@ -6,18 +6,17 @@ import { PromptCard } from "@/components/prompts/prompt-card";
 import { usePromptList, UNGROUPED_OPTION } from "@/components/prompts/use-prompt-list";
 import { getPromptText, isComboPrompt } from "@/components/prompts/prompt-combo";
 import { buildExportFile, downloadPromptJson, parseImportJson } from "@/components/prompts/prompt-io";
-import { GalleryDialog } from "./components/gallery-dialog";
 import { PromptDetailDialog } from "./components/prompt-detail-dialog";
 import { PromptEditorDialog } from "./components/prompt-editor-dialog";
 import { PromptGroupManagerDialog } from "./components/prompt-group-manager-dialog";
 import { duplicatePrompt, removePrompt } from "@/services/api/prompts";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { cn } from "@/lib/utils";
-import { useAssetStore } from "@/stores/use-asset-store";
-import { usePromptStore } from "@/stores/use-prompt-store";
+import { GALLERY_GROUP, usePromptStore } from "@/stores/use-prompt-store";
 import { ALL_PROMPTS_OPTION, type Prompt } from "@/services/api/prompts";
 
-export default function PromptsPage() {
+/** 「我的」页提示词分区。mode=favorites 时只展示灵感广场收藏（灵感精选分组），mode=prompts 展示其余提示词。 */
+export function PromptsSection({ mode }: { mode: "prompts" | "favorites" }) {
     const { message } = App.useApp();
     const [titleKeyword, setTitleKeyword] = useState("");
     const [selectedTags, setSelectedTags] = useState<string[]>([]);
@@ -27,23 +26,26 @@ export default function PromptsPage() {
     const [editorOpen, setEditorOpen] = useState(false);
     const [editingPrompt, setEditingPrompt] = useState<Prompt | null>(null);
     const [groupManagerOpen, setGroupManagerOpen] = useState(false);
-    const [galleryOpen, setGalleryOpen] = useState(false);
     const fileInputRef = useRef<HTMLInputElement>(null);
 
-    const addAsset = useAssetStore((state) => state.addAsset);
+    const favorites = mode === "favorites";
     const copyText = useCopyText();
     const prompts = usePromptStore((s) => s.prompts);
     const jsonIds = usePromptStore((s) => s.jsonIds);
     const deletedJsonIds = usePromptStore((s) => s.deletedJsonIds);
     const restoreJsonPrompt = usePromptStore((s) => s.restoreJsonPrompt);
     const importPrompts = usePromptStore((s) => s.importPrompts);
-    const { items: promptItems, tags: promptTags, groups: groupInfo, total: totalPrompts, isLoading } = usePromptList({ keyword: titleKeyword, tags: selectedTags, category: selectedCategory, group: selectedGroup });
+    const listGroup = favorites ? GALLERY_GROUP : selectedGroup;
+    const { items: rawItems, tags: promptTags, groups: groupInfo, total: totalPrompts, isLoading } = usePromptList({ keyword: titleKeyword, tags: selectedTags, category: selectedCategory, group: listGroup });
+    // 我的提示词分区在「全部」下不重复展示收藏分组（收藏有独立分区）
+    const promptItems = useMemo(() => (!favorites && selectedGroup === ALL_PROMPTS_OPTION ? rawItems.filter((item) => item.group !== GALLERY_GROUP) : rawItems), [favorites, rawItems, selectedGroup]);
 
     const groupTabs = useMemo(() => {
-        const tabs = [ALL_PROMPTS_OPTION, ...groupInfo.names];
+        if (favorites) return [];
+        const tabs = [ALL_PROMPTS_OPTION, ...groupInfo.names.filter((name) => name !== GALLERY_GROUP)];
         if (groupInfo.hasUngrouped) tabs.push(UNGROUPED_OPTION);
         return tabs;
-    }, [groupInfo]);
+    }, [favorites, groupInfo]);
 
     const toggleTag = (tag: string) => {
         if (tag === ALL_PROMPTS_OPTION) return setSelectedTags([]);
@@ -51,11 +53,6 @@ export default function PromptsPage() {
     };
 
     const copyPromptText = (item: Prompt) => copyText(getPromptText(item), isComboPrompt(item) ? "组合提示词已复制" : "提示词已复制");
-
-    const savePromptAsset = (item: Prompt) => {
-        addAsset({ kind: "text", title: item.title, coverUrl: item.coverUrl, tags: item.tags, data: { content: getPromptText(item) } });
-        message.success("已加入我的素材");
-    };
 
     const openCreateEditor = () => {
         setEditingPrompt(null);
@@ -125,13 +122,9 @@ export default function PromptsPage() {
     };
 
     return (
-        <div className="flex h-full flex-col overflow-hidden bg-background text-stone-800 dark:text-stone-100">
-            <main className="min-h-0 flex-1 overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-8 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.16)_1px,transparent_1px)]">
-                <div className="pb-8">
-                    <div className="mx-auto max-w-5xl text-center">
-                        <h1 className="text-4xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">提示词中心</h1>
-                        <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">共 {totalPrompts} 条提示词，支持组合式键值卡片、分组与 JSON 导入导出。</p>
-                    </div>
+        <div className="pb-4">
+            <div className="pb-6">
+                <p className="text-sm text-stone-500 dark:text-stone-400">{favorites ? `共 ${totalPrompts} 条收藏，来自灵感广场。` : `共 ${totalPrompts} 条提示词，支持组合式键值卡片、分组与 JSON 导入导出。`}</p>
                     {isLoading ? (
                         <div className="flex h-60 items-center justify-center">
                             <Spin />
@@ -139,14 +132,13 @@ export default function PromptsPage() {
                     ) : null}
                     {!isLoading ? (
                         <>
-                            <div className="mx-auto mt-8 flex w-full max-w-3xl flex-wrap items-center gap-3">
+                            <div className="mt-4 flex w-full max-w-3xl flex-wrap items-center gap-3">
                                 <Input size="large" className="min-w-[220px] flex-1" prefix={<Search className="size-4 text-stone-400" />} value={titleKeyword} placeholder="按标题查询" onChange={(event) => setTitleKeyword(event.target.value)} />
-                                <Button type="primary" size="large" icon={<Plus className="size-4" />} onClick={openCreateEditor}>
-                                    新建提示词
-                                </Button>
-                                <Button size="large" icon={<Sparkles className="size-4" />} onClick={() => setGalleryOpen(true)}>
-                                    灵感画廊
-                                </Button>
+                                {!favorites ? (
+                                    <>
+                                        <Button type="primary" size="large" icon={<Plus className="size-4" />} onClick={openCreateEditor}>
+                                            新建提示词
+                                        </Button>
                                 <Dropdown
                                     menu={{
                                         items: [
@@ -161,11 +153,13 @@ export default function PromptsPage() {
                                 >
                                     <Button size="large">数据管理</Button>
                                 </Dropdown>
+                                    </>
+                                ) : null}
                                 <input ref={fileInputRef} type="file" accept="application/json,.json" className="hidden" onChange={handleImportFile} />
                             </div>
 
                             {groupTabs.length > 1 ? (
-                                <div className="mx-auto mt-6 flex max-w-6xl flex-wrap gap-2">
+                                <div className="mt-6 flex max-w-6xl flex-wrap gap-2">
                                     {groupTabs.map((tab) => {
                                         const active = selectedGroup === tab;
                                         return (
@@ -178,7 +172,7 @@ export default function PromptsPage() {
                             ) : null}
 
                             {promptTags.length > 1 ? (
-                                <div className="mx-auto mt-6 grid max-w-6xl gap-3 text-left">
+                                <div className="mt-6 grid max-w-6xl gap-3 text-left">
                                     <div className="grid gap-2 sm:grid-cols-[56px_minmax(0,1fr)] sm:items-start">
                                         <div className="pt-2 text-xs font-medium text-stone-500 dark:text-stone-400">标签</div>
                                         <div className="flex flex-wrap gap-2">
@@ -202,31 +196,33 @@ export default function PromptsPage() {
 
                 {!isLoading ? (
                     <div>
-                        <div className="mx-auto grid max-w-7xl gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
+                        <div className="grid gap-5 sm:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4">
                             {promptItems.map((item) => (
                                 <PromptCard
                                     key={item.id}
                                     item={item}
                                     onOpen={() => setSelectedPrompt(item)}
                                     onCopy={() => copyPromptText(item)}
-                                    onEdit={() => openEditEditor(item)}
+                                    onEdit={favorites ? undefined : () => openEditEditor(item)}
                                     onDelete={() => handleDelete(item)}
                                     extraAction={
-                                        <Button size="small" icon={<CopyPlus className="size-3.5" />} onClick={() => handleDuplicate(item)}>
-                                            复制卡片
-                                        </Button>
+                                        favorites ? undefined : (
+                                            <Button size="small" icon={<CopyPlus className="size-3.5" />} onClick={() => handleDuplicate(item)}>
+                                                复制卡片
+                                            </Button>
+                                        )
                                     }
                                 />
                             ))}
                         </div>
                         {promptItems.length === 0 && totalPrompts === 0 && deletedJsonIds.length === 0 ? (
-                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="还没有提示词，编辑 public/prompts.json 或点击「新建提示词」开始创建" className="py-16" />
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={favorites ? "还没有收藏，去灵感广场逛逛吧" : "还没有提示词，编辑 public/prompts.json 或点击「新建提示词」开始创建"} className="py-16" />
                         ) : promptItems.length === 0 ? (
-                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description="没有找到匹配的提示词" className="py-16" />
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={favorites ? "还没有收藏，去灵感广场逛逛吧" : "没有找到匹配的提示词"} className="py-16" />
                         ) : null}
 
-                        {deletedJsonIds.length > 0 ? (
-                            <div className="mx-auto mt-8 max-w-7xl rounded-lg border border-stone-200 bg-stone-50 p-4 dark:border-stone-700 dark:bg-stone-900">
+                        {!favorites && deletedJsonIds.length > 0 ? (
+                            <div className="mt-8 max-w-7xl rounded-lg border border-stone-200 bg-stone-50 p-4 dark:border-stone-700 dark:bg-stone-900">
                                 <div className="mb-2 text-xs font-medium text-stone-500 dark:text-stone-400">已隐藏的项目内置提示词（{deletedJsonIds.length} 条）</div>
                                 <div className="flex flex-wrap gap-2">
                                     {deletedJsonIds.map((id) => (
@@ -248,20 +244,17 @@ export default function PromptsPage() {
                         ) : null}
                     </div>
                 ) : null}
-            </main>
 
             <PromptDetailDialog
                 prompt={selectedPrompt}
                 isJsonPrompt={selectedPrompt ? jsonIds.includes(selectedPrompt.id) : false}
                 onClose={() => setSelectedPrompt(null)}
                 onCopy={(prompt) => copyText(prompt, "提示词已复制")}
-                onSaveAsset={savePromptAsset}
-                onEdit={openEditEditor}
+                onEdit={favorites ? undefined : openEditEditor}
                 onDelete={handleDelete}
             />
             <PromptEditorDialog open={editorOpen} prompt={editingPrompt} onClose={() => setEditorOpen(false)} />
             <PromptGroupManagerDialog open={groupManagerOpen} onClose={() => setGroupManagerOpen(false)} />
-            <GalleryDialog open={galleryOpen} onClose={() => setGalleryOpen(false)} />
         </div>
     );
 }

@@ -1,15 +1,14 @@
 import { createBrowserRouter, Outlet } from "react-router-dom";
 
 import UserLayout from "@/layouts/user-layout";
-import AssetsPage from "@/pages/assets";
+import AgentsPage from "@/pages/agents";
 import CanvasPage from "@/pages/canvas";
 import CanvasProjectPage from "@/pages/canvas/project";
 import ConfigPage from "@/pages/config";
 import HomePage from "@/pages/home";
-import ImagePage from "@/pages/image";
+import MePage from "@/pages/me";
 import NotFound from "@/pages/not-found";
-import PromptsPage from "@/pages/prompts";
-import VideoPage from "@/pages/video";
+import PlazaPage from "@/pages/plaza";
 
 export const router = createBrowserRouter([
     {
@@ -20,10 +19,9 @@ export const router = createBrowserRouter([
         ),
         children: [
             { path: "/", element: <HomePage /> },
-            { path: "/image", element: <ImagePage /> },
-            { path: "/video", element: <VideoPage /> },
-            { path: "/assets", element: <AssetsPage /> },
-            { path: "/prompts", element: <PromptsPage /> },
+            { path: "/agents", element: <AgentsPage /> },
+            { path: "/plaza", element: <PlazaPage /> },
+            { path: "/me", element: <MePage /> },
             { path: "/canvas", element: <CanvasPage /> },
             { path: "/canvas/:id", element: <CanvasProjectPage /> },
             { path: "/config", element: <ConfigPage /> },

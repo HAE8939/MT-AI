@@ -1,4 +1,4 @@
-import { Copy, FolderPlus, Pencil, Trash2 } from "lucide-react";
+import { Copy, Pencil, Trash2 } from "lucide-react";
 import { Button, Modal, Space, Tag } from "antd";
 
 import { formatPromptDate, type Prompt } from "@/services/api/prompts";
@@ -10,7 +10,6 @@ export function PromptDetailDialog({
     isJsonPrompt = false,
     onClose,
     onCopy,
-    onSaveAsset,
     onEdit,
     onDelete,
 }: {
@@ -18,7 +17,6 @@ export function PromptDetailDialog({
     isJsonPrompt?: boolean;
     onClose: () => void;
     onCopy: (prompt: string) => void;
-    onSaveAsset?: (prompt: Prompt) => void;
     onEdit?: (prompt: Prompt) => void;
     onDelete?: (prompt: Prompt) => void;
 }) {
@@ -72,11 +70,6 @@ export function PromptDetailDialog({
                                     复制提示词
                                 </Button>
                             )}
-                            {onSaveAsset ? (
-                                <Button icon={<FolderPlus className="size-4" />} onClick={() => onSaveAsset(prompt)}>
-                                    加入我的素材
-                                </Button>
-                            ) : null}
                             {onEdit ? (
                                 <Button icon={<Pencil className="size-4" />} onClick={() => onEdit(prompt)}>
                                     编辑
