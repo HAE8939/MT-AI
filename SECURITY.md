@@ -1,5 +1,21 @@
 # Security Policy
 
+## Known Credential Exposure (historical commits)
+
+Git history prior to the reduction refactor contains real credentials that were
+hardcoded in source (`defaultCosConfig` in `use-config-store.ts`, and WebDAV /
+channel keys in `web/public/config.json`). Treat all of them as compromised:
+
+- The Tencent COS SecretId/SecretKey and bucket committed there must be
+  considered public. When migrating to a new COS account, simply revoke the old
+  keys; do not reuse them.
+- New COS credentials must never be committed. Use a CAM sub-account restricted
+  to a single bucket and prefix with only `PutObject` / `GetObject` /
+  `DeleteObject` permissions, and enter it via the in-app config page (stored in
+  browser storage only).
+- STS temporary credentials (served by a small cloud function) are the required
+  approach before any multi-user public deployment.
+
 ## Supported Versions
 
 infinite-canvas is in active development. Security fixes are accepted for the

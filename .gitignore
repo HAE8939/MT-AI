@@ -9,3 +9,5 @@ data/
 .DS_Store
 .idea
 web/dist
+# contains real API key - do not commit
+.claude/skills/ai-api-skill/SKILL.md
