@@ -162,9 +162,9 @@ export function CanvasNodeCompareDialog({ images, open, onClose }: { images: Arr
             styles={
                 fullscreen
                     ? {
-                          content: { height: "100vh", maxHeight: "100vh", padding: 0, borderRadius: 0, display: "flex", flexDirection: "column" },
+                          container: { height: "100vh", maxHeight: "100vh", padding: 0, borderRadius: 0, display: "flex", flexDirection: "column" as const },
                           header: { padding: "12px 16px", marginBottom: 0 },
-                          body: { padding: 0, display: "flex", flexDirection: "column", flex: 1, minHeight: 0 },
+                          body: { padding: 0, display: "flex" as const, flexDirection: "column" as const, flex: 1, minHeight: 0 },
                       }
                     : { body: { padding: 0 } }
             }

@@ -1,5 +1,5 @@
 import { create } from "zustand";
-import { persist, type PersistStorage } from "zustand/middleware";
+import { persist, type PersistStorage, type StorageValue } from "zustand/middleware";
 
 import { localForageStorage } from "@/lib/localforage-storage";
 
@@ -298,12 +298,13 @@ export const usePromptStore = create<PromptStore>()(
                 setItem: (name, value) => localForageStorage.setItem(name, JSON.stringify(value)),
                 removeItem: (name) => localForageStorage.removeItem(name),
             } satisfies PersistStorage<PromptStore>,
-            partialize: (state) => ({
-                userPrompts: state.prompts.filter((p) => !state.jsonIds.includes(p.id)),
-                editedPrompts: state.editedPrompts,
-                deletedJsonIds: state.deletedJsonIds,
-                groups: state.groups,
-            }),
+            partialize: (state) =>
+                ({
+                    userPrompts: state.prompts.filter((p) => !state.jsonIds.includes(p.id)),
+                    editedPrompts: state.editedPrompts,
+                    deletedJsonIds: state.deletedJsonIds,
+                    groups: state.groups,
+                }) as StorageValue<PromptStore>["state"],
             onRehydrateStorage: () => () => {
                 void (async () => {
                     const jsonPrompts = await loadJsonPrompts();

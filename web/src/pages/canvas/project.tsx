@@ -682,7 +682,7 @@ function InfiniteCanvasPage() {
             setConnections((prev) => [...prev, { id: nanoid(), ...connection }]);
             setSelectedNodeIds(new Set([newNode.id]));
             setSelectedConnectionId(null);
-            if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio && type !== CanvasNodeType.Group) setDialogNodeId(newNode.id);
+            if (type !== CanvasNodeType.Text && type !== CanvasNodeType.Audio) setDialogNodeId(newNode.id);
             setPendingConnectionCreate(null);
             setConnecting(null);
         },
@@ -1045,8 +1045,8 @@ function InfiniteCanvasPage() {
             const files = await Promise.all(
                 images.map(async (node, index) => {
                     const content = node.metadata?.content || "";
-                    const blob = node.metadata?.storageKey ? await getImageBlob(node.metadata.storageKey) : null;
-                    const data = blob || (await fetch(content).then((response) => response.blob()));
+                    const stored = node.metadata?.storageKey ? await getImageBlob(node.metadata.storageKey) : null;
+                    const data: Blob = stored ? stored : await fetch(content).then((response) => response.blob());
                     const extension = data.type.includes("jpeg") ? "jpg" : data.type.includes("webp") ? "webp" : imageExtension(content);
                     return { name: `${String(index + 1).padStart(2, "0")}-${sanitizeFileName(node.title || node.id)}.${extension}`, data };
                 }),

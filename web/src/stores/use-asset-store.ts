@@ -132,9 +132,11 @@ export const useAssetStore = create<AssetStore>()(
 );
 
 function enqueueAssetMedia(asset: Omit<Asset, "id" | "createdAt" | "updatedAt"> | Asset, mediaId: string) {
-    if (asset.kind === "text" || !asset.data.storageKey) return;
-    const mimeType = asset.data.mimeType || (asset.kind === "image" ? "image/png" : "video/mp4");
-    enqueueCosUpload({ storageKey: asset.data.storageKey, fileName: `${asset.title || "asset"}.${assetExtension(mimeType)}`, mimeType, mediaKind: "assets", mediaId });
+    if (asset.kind === "text") return;
+    const data = asset.data as ImageAsset["data"] | VideoAsset["data"];
+    if (!data.storageKey) return;
+    const mimeType = data.mimeType || (asset.kind === "image" ? "image/png" : "video/mp4");
+    enqueueCosUpload({ storageKey: data.storageKey, fileName: `${asset.title || "asset"}.${assetExtension(mimeType)}`, mimeType, mediaKind: "assets", mediaId });
 }
 
 function assetExtension(mimeType: string) {

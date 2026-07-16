@@ -21,7 +21,7 @@ export async function ensureCosMediaUrl(input: EnqueueCosUploadInput, signal?: A
 
 function waitForTask(id: string, signal?: AbortSignal) {
     return new Promise<string>((resolve, reject) => {
-        let unsubscribe = () => undefined;
+        let unsubscribe: () => void = () => undefined;
         const finish = (task?: CosUploadTask) => {
             if (task?.status === "succeeded" && task.cosUrl) {
                 unsubscribe();
