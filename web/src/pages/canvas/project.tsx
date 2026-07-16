@@ -33,9 +33,8 @@ import { CanvasNodeContextMenu } from "@/components/canvas/canvas-context-menu";
 import { CanvasGridMergeDialog } from "@/components/canvas/canvas-grid-merge-dialog";
 import { CanvasNodeCompareDialog } from "@/components/canvas/canvas-node-compare-dialog";
 import { CanvasNodePanoramaDialog } from "@/components/canvas/canvas-node-panorama-dialog";
-import { CanvasDrawingRenderDialog } from "@/components/canvas/canvas-drawing-render-dialog";
 import { CanvasRoleWorkflowDialog } from "@/components/canvas/canvas-role-workflow-dialog";
-import { CanvasRoleChatPanel, buildRoleImageParts, buildRoleTextInputs } from "@/components/canvas/canvas-role-chat-panel";
+import { buildRoleImageParts, buildRoleTextInputs } from "@/lib/canvas/canvas-doc-agent";
 import { CanvasNodeAnnotateDialog } from "@/components/canvas/canvas-node-annotate-dialog";
 import { CanvasNodeAngleDialog, type CanvasImageAngleAction, type CanvasImageAngleParams } from "@/components/canvas/canvas-node-angle-dialog";
 import { CanvasNodeCropDialog, type CanvasImageCropRect } from "@/components/canvas/canvas-node-crop-dialog";
@@ -73,8 +72,9 @@ import {
 } from "@/types/canvas";
 import type { ReferenceImage } from "@/types/image";
 import type { ReferenceAudio } from "@/types/media";
-import type { DrawingRenderParams, ImageGenerationParams } from "@/types/ai-workflow";
-import { useRoleStore, type AiRole } from "@/stores/use-role-store";
+import type { ImageGenerationParams } from "@/types/ai-workflow";
+import { useAgentTemplateStore } from "@/stores/use-agent-template-store";
+import type { DocAgentRunTarget } from "@/components/canvas/canvas-role-workflow-dialog";
 
 type CanvasClipboard = {
     nodes: CanvasNodeData[];
@@ -269,7 +269,6 @@ function InfiniteCanvasPage() {
     });
 
     const config = useConfigStore((state) => state.config);
-    const workflowConfig = useConfigStore((state) => state.workflowConfig);
     const effectiveConfig = useEffectiveConfig();
     const isAiConfigReady = useConfigStore((state) => state.isAiConfigReady);
     const openConfigDialog = useConfigStore((state) => state.openConfigDialog);
@@ -318,16 +317,12 @@ function InfiniteCanvasPage() {
     const [maskEditNodeId, setMaskEditNodeId] = useState<string | null>(null);
     const [splitNodeId, setSplitNodeId] = useState<string | null>(null);
     const [upscaleNodeId, setUpscaleNodeId] = useState<string | null>(null);
-    const [superResolveNodeId, setSuperResolveNodeId] = useState<string | null>(null);
     const [angleNodeId, setAngleNodeId] = useState<string | null>(null);
     const [previewNodeId, setPreviewNodeId] = useState<string | null>(null);
     const [compareOpen, setCompareOpen] = useState(false);
     const [gridMergeOpen, setGridMergeOpen] = useState(false);
     const [panoramaNodeId, setPanoramaNodeId] = useState<string | null>(null);
-    const [drawingRenderNodeId, setDrawingRenderNodeId] = useState<string | null>(null);
     const [roleWorkflowOpen, setRoleWorkflowOpen] = useState(false);
-    const [roleChatOpen, setRoleChatOpen] = useState(false);
-    const [roleChatRoleId, setRoleChatRoleId] = useState<string | null>(null);
     const [annotateNodeId, setAnnotateNodeId] = useState<string | null>(null);
     const [agentUndoSnapshot, setAgentUndoSnapshot] = useState<CanvasAgentSnapshot | null>(null);
     const [titleEditing, setTitleEditing] = useState(false);
@@ -756,7 +751,6 @@ function InfiniteCanvasPage() {
     const maskEditNode = maskEditNodeId ? nodeById.get(maskEditNodeId) || null : null;
     const splitNode = splitNodeId ? nodeById.get(splitNodeId) || null : null;
     const upscaleNode = upscaleNodeId ? nodeById.get(upscaleNodeId) || null : null;
-    const superResolveNode = superResolveNodeId ? nodeById.get(superResolveNodeId) || null : null;
     const angleNode = angleNodeId ? nodeById.get(angleNodeId) || null : null;
     const previewNode = previewNodeId ? nodeById.get(previewNodeId) || null : null;
     const compareNodes = useMemo(
@@ -765,7 +759,6 @@ function InfiniteCanvasPage() {
     );
     const selectedImageNodes = compareNodes;
     const panoramaNode = panoramaNodeId ? nodeById.get(panoramaNodeId) || null : null;
-    const drawingRenderNode = drawingRenderNodeId ? nodeById.get(drawingRenderNodeId) || null : null;
     const roleWorkflowNodes = useMemo(() => Array.from(selectedNodeIds).map((id) => nodeById.get(id)).filter((node): node is CanvasNodeData => Boolean(node && node.type !== CanvasNodeType.Group)), [nodeById, selectedNodeIds]);
     const annotateNode = annotateNodeId ? nodeById.get(annotateNodeId) || null : null;
     const hasMultipleSelectedNodes = selectedNodeIds.size > 1;
@@ -2066,56 +2059,9 @@ function InfiniteCanvasPage() {
 
     const runUpscaleAction = useCallback(
         (node: CanvasNodeData, action: CanvasImageUpscaleAction) => {
-            if (action.mode === "local") {
-                void upscaleImageNode(node, action.params);
-                return;
-            }
-            if (!workflowConfig.bizyair.baseUrl.trim() || !workflowConfig.bizyair.apiKey.trim()) {
-                openConfigDialog(false, "workflows");
-                message.warning("请先配置 BizyAir 专业工作流");
-                return;
-            }
-            const childId = nanoid();
-            const taskId = enqueueWorkflowTask({ projectId, sourceNodeId: node.id, targetNodeIds: [childId], type: "upscale", params: { targetResolution: action.targetResolution }, prompt: node.metadata?.prompt });
-            setUpscaleNodeId(null);
-            setSuperResolveNodeId(null);
-            setNodes((current) => [
-                ...current,
-                {
-                    id: childId,
-                    type: CanvasNodeType.Image,
-                    title: `AI 超分 ${action.targetResolution / 1024}K`,
-                    position: { x: node.position.x + node.width + 96, y: node.position.y },
-                    width: node.width,
-                    height: node.height,
-                    metadata: { prompt: node.metadata?.prompt, status: NODE_STATUS_LOADING, workflowTaskId: taskId, workflowType: "upscale", workflowResultIndex: 0 },
-                },
-            ]);
-            setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
-            setSelectedNodeIds(new Set([childId]));
-            setDialogNodeId(childId);
-            message.success("AI 超分任务已提交");
+            void upscaleImageNode(node, action.params);
         },
-        [enqueueWorkflowTask, message, openConfigDialog, projectId, upscaleImageNode, workflowConfig.bizyair.apiKey, workflowConfig.bizyair.baseUrl],
-    );
-
-    const enqueueDrawingRender = useCallback(
-        (node: CanvasNodeData, params: DrawingRenderParams) => {
-            if (!workflowConfig.bizyair.baseUrl.trim() || !workflowConfig.bizyair.apiKey.trim()) {
-                openConfigDialog(false, "workflows");
-                message.warning("请先配置 BizyAir 专业工作流");
-                return;
-            }
-            const childId = nanoid();
-            const taskId = enqueueWorkflowTask({ projectId, sourceNodeId: node.id, targetNodeIds: [childId], type: "drawing-render", params, prompt: params.description || params.customPrompt || "图纸渲染" });
-            setDrawingRenderNodeId(null);
-            setNodes((current) => [...current, { id: childId, type: CanvasNodeType.Image, title: "图纸渲染结果", position: { x: node.position.x + node.width + 96, y: node.position.y }, width: node.width, height: node.height, metadata: { prompt: params.description || "图纸渲染", status: NODE_STATUS_LOADING, workflowTaskId: taskId, workflowType: "drawing-render", workflowResultIndex: 0 } }]);
-            setConnections((current) => [...current, { id: nanoid(), fromNodeId: node.id, toNodeId: childId }]);
-            setSelectedNodeIds(new Set([childId]));
-            setDialogNodeId(childId);
-            message.success("图纸渲染任务已提交");
-        },
-        [enqueueWorkflowTask, message, openConfigDialog, projectId, workflowConfig.bizyair.apiKey, workflowConfig.bizyair.baseUrl],
+        [upscaleImageNode],
     );
 
     const generatePanoramaNode = useCallback(
@@ -2202,48 +2148,21 @@ function InfiniteCanvasPage() {
 
     const runAngleAction = useCallback(
         (node: CanvasNodeData, action: CanvasImageAngleAction) => {
-            if (action.mode === "generic") {
-                void generateAngleNode(node, action.params);
-                return;
-            }
-            if (!workflowConfig.bizyair.baseUrl.trim() || !workflowConfig.bizyair.apiKey.trim()) {
-                openConfigDialog(false, "workflows");
-                message.warning("请先配置 BizyAir 专业工作流");
-                return;
-            }
-            const childIds = [nanoid(), nanoid()];
-            const taskId = enqueueWorkflowTask({ projectId, sourceNodeId: node.id, targetNodeIds: childIds, type: "multi-angle", params: action.params, prompt: node.metadata?.prompt || "双相机多角度" });
-            const gap = 24;
-            setAngleNodeId(null);
-            setNodes((current) => [
-                ...current,
-                ...childIds.map((id, index) => ({
-                    id,
-                    type: CanvasNodeType.Image,
-                    title: `多角度 · 相机 ${index + 1}`,
-                    position: { x: node.position.x + node.width + 96, y: node.position.y + index * (node.height + gap) },
-                    width: node.width,
-                    height: node.height,
-                    metadata: { prompt: `相机 ${index + 1}：水平 ${index ? action.params.camera2.horizontal : action.params.camera1.horizontal}°`, status: NODE_STATUS_LOADING, workflowTaskId: taskId, workflowType: "multi-angle" as const, workflowResultIndex: index },
-                })),
-            ]);
-            setConnections((current) => [...current, ...childIds.map((id) => ({ id: nanoid(), fromNodeId: node.id, toNodeId: id }))]);
-            setSelectedNodeIds(new Set(childIds));
-            message.success("双相机多角度任务已提交");
+            void generateAngleNode(node, action.params);
         },
-        [enqueueWorkflowTask, generateAngleNode, message, openConfigDialog, projectId, workflowConfig.bizyair.apiKey, workflowConfig.bizyair.baseUrl],
+        [generateAngleNode],
     );
 
     const streamRoleAnalysis = useCallback(
-        async (childId: string, role: AiRole, instruction: string, selected: CanvasNodeData[]) => {
+        async (childId: string, target: DocAgentRunTarget, instruction: string, selected: CanvasNodeData[]) => {
             const generationConfig = { ...effectiveConfig, model: effectiveConfig.textModel || effectiveConfig.model };
             const controller = startGenerationRequest(childId, selected[0]?.id || childId, childId);
             try {
                 const imageParts = await buildRoleImageParts(selected);
                 const textInputs = buildRoleTextInputs(selected);
-                const taskText = [instruction || "请按照角色职责分析所选内容。", ...textInputs].join("\n\n");
+                const taskText = [instruction || "请按照智能体职责分析所选内容。", ...textInputs].join("\n\n");
                 const messages: import("@/services/api/image").AiTextMessage[] = [
-                    { role: "system", content: role.systemPrompt },
+                    { role: "system", content: target.systemPrompt },
                     { role: "user", content: imageParts.length ? [{ type: "text", text: taskText }, ...imageParts] : taskText },
                 ];
                 let streamed = "";
@@ -2254,7 +2173,7 @@ function InfiniteCanvasPage() {
                 setNodes((current) => current.map((node) => node.id === childId ? { ...node, metadata: { ...node.metadata, content: answer || streamed, status: NODE_STATUS_SUCCESS } } : node));
             } catch (error) {
                 if (isGenerationCanceled(error)) return;
-                const detail = error instanceof Error ? error.message : "角色分析失败";
+                const detail = error instanceof Error ? error.message : "智能体分析失败";
                 setNodes((current) => current.map((node) => node.id === childId ? { ...node, metadata: { ...node.metadata, status: NODE_STATUS_ERROR, errorDetails: detail } } : node));
             } finally {
                 finishGenerationRequest(childId, controller);
@@ -2264,7 +2183,7 @@ function InfiniteCanvasPage() {
     );
 
     const runRoleWorkflow = useCallback(
-        async (role: AiRole, instruction: string) => {
+        async (target: DocAgentRunTarget, instruction: string) => {
             const selected = roleWorkflowNodes;
             if (!selected.length) return;
             const generationConfig = { ...effectiveConfig, model: effectiveConfig.textModel || effectiveConfig.model };
@@ -2277,22 +2196,23 @@ function InfiniteCanvasPage() {
             const centerY = selected.reduce((sum, node) => sum + node.position.y + node.height / 2, 0) / selected.length;
             const spec = NODE_DEFAULT_SIZE[CanvasNodeType.Text];
             setRoleWorkflowOpen(false);
-            setNodes((current) => [...current, { id: childId, type: CanvasNodeType.Text, title: role.name, position: { x: rightEdge + 96, y: centerY - spec.height / 2 }, width: spec.width, height: spec.height, metadata: { content: "正在分析...", prompt: instruction, roleId: role.id, status: NODE_STATUS_LOADING, fontSize: 14 } }]);
+            setNodes((current) => [...current, { id: childId, type: CanvasNodeType.Text, title: target.name, position: { x: rightEdge + 96, y: centerY - spec.height / 2 }, width: spec.width, height: spec.height, metadata: { content: "正在分析...", prompt: instruction, agentTemplateId: target.id, status: NODE_STATUS_LOADING, fontSize: 14 } }]);
             setConnections((current) => [...current, ...selected.map((node) => ({ id: nanoid(), fromNodeId: node.id, toNodeId: childId }))]);
             setSelectedNodeIds(new Set([childId]));
             setDialogNodeId(childId);
-            await streamRoleAnalysis(childId, role, instruction, selected);
+            await streamRoleAnalysis(childId, target, instruction, selected);
         },
         [effectiveConfig, isAiConfigReady, openConfigDialog, roleWorkflowNodes, streamRoleAnalysis],
     );
 
     const regenerateRoleNode = useCallback(
         async (node: CanvasNodeData) => {
-            const role = useRoleStore.getState().roles.find((item) => item.id === node.metadata?.roleId);
-            if (!role) {
-                message.warning("找不到对应的专业角色，无法重新生成");
+            const template = useAgentTemplateStore.getState().templates.find((item) => item.id === node.metadata?.agentTemplateId);
+            if (!template || template.spec.kind !== "doc-analysis") {
+                message.warning("找不到对应的文档智能体，无法重新生成");
                 return;
             }
+            const target: DocAgentRunTarget = { id: template.id, name: template.name, systemPrompt: template.spec.systemPrompt };
             const generationConfig = { ...effectiveConfig, model: effectiveConfig.textModel || effectiveConfig.model };
             if (!isAiConfigReady(generationConfig, generationConfig.model)) {
                 openConfigDialog(true);
@@ -2301,7 +2221,7 @@ function InfiniteCanvasPage() {
             const sourceIds = new Set(connectionsRef.current.filter((connection) => connection.toNodeId === node.id).map((connection) => connection.fromNodeId));
             const sources = nodesRef.current.filter((item) => sourceIds.has(item.id) && item.type !== CanvasNodeType.Group);
             setNodes((current) => current.map((item) => item.id === node.id ? { ...item, metadata: { ...item.metadata, content: "正在分析...", status: NODE_STATUS_LOADING, errorDetails: undefined } } : item));
-            await streamRoleAnalysis(node.id, role, node.metadata?.prompt || "", sources);
+            await streamRoleAnalysis(node.id, target, node.metadata?.prompt || "", sources);
         },
         [effectiveConfig, isAiConfigReady, message, openConfigDialog, streamRoleAnalysis],
     );
@@ -2309,6 +2229,48 @@ function InfiniteCanvasPage() {
     const handleFontSizeChange = useCallback((nodeId: string, fontSize: number) => {
         setNodes((prev) => prev.map((node) => (node.id === nodeId ? { ...node, metadata: { ...node.metadata, fontSize } } : node)));
     }, []);
+
+    /** 把当前选中的节点与它们之间的连线保存为画布模板智能体（去掉运行时状态与大体积内容，仅保留生成参数骨架） */
+    const saveSelectionAsAgent = useCallback(() => {
+        const selectedIds = new Set(selectedNodeIds);
+        const selected = nodesRef.current.filter((node) => selectedIds.has(node.id));
+        if (!selected.length) {
+            message.warning("请先选择要保存的节点");
+            return;
+        }
+        const innerConnections = connectionsRef.current.filter((connection) => selectedIds.has(connection.fromNodeId) && selectedIds.has(connection.toNodeId));
+        const minX = Math.min(...selected.map((node) => node.position.x));
+        const minY = Math.min(...selected.map((node) => node.position.y));
+        const templateNodes = selected.map((node) => ({
+            ...node,
+            position: { x: node.position.x - minX, y: node.position.y - minY },
+            metadata: node.metadata
+                ? {
+                      ...node.metadata,
+                      // 运行时状态与大内容不入模板：图片/视频内容留空作为「输入槽」，提示词与生成参数保留
+                      content: node.type === CanvasNodeType.Text ? node.metadata.content : undefined,
+                      composerContent: undefined,
+                      status: undefined,
+                      errorDetails: undefined,
+                      storageKey: undefined,
+                      workflowTaskId: undefined,
+                      batchChildIds: undefined,
+                      batchRootId: undefined,
+                  }
+                : undefined,
+        }));
+        const hasGeneration = templateNodes.some((node) => node.metadata?.prompt || node.metadata?.generationMode);
+        const category = selected.some((node) => node.type === CanvasNodeType.Video) ? ("video" as const) : ("image" as const);
+        const name = window.prompt("给这个智能体起个名字：", "画布模板")?.trim();
+        if (!name) return;
+        useAgentTemplateStore.getState().addTemplate({
+            name,
+            description: `${selected.length} 个节点 · ${innerConnections.length} 条连线${hasGeneration ? "" : "（未包含生成节点）"}`,
+            category,
+            spec: { kind: "canvas", nodes: templateNodes, connections: innerConnections },
+        });
+        message.success("已保存为智能体，可在「智能体」页查看并插入其他画布");
+    }, [message, selectedNodeIds]);
 
     const handleUploadRequest = useCallback((nodeId?: string, position?: Position) => {
         uploadTargetRef.current = { nodeId, position };
@@ -2764,7 +2726,7 @@ function InfiniteCanvasPage() {
 
     const handleRetryNode = useCallback(
         async (node: CanvasNodeData) => {
-            if (node.type === CanvasNodeType.Text && node.metadata?.roleId) {
+            if (node.type === CanvasNodeType.Text && node.metadata?.agentTemplateId) {
                 await regenerateRoleNode(node);
                 return;
             }
@@ -3156,11 +3118,9 @@ function InfiniteCanvasPage() {
                     onCrop={(node) => setCropNodeId(node.id)}
                     onSplit={(node) => setSplitNodeId(node.id)}
                     onUpscale={(node) => setUpscaleNodeId(node.id)}
-                    onSuperResolve={(node) => setSuperResolveNodeId(node.id)}
                     onAngle={(node) => setAngleNodeId(node.id)}
                     onPanorama={(node) => setPanoramaNodeId(node.id)}
                     onPanoramaGenerate={(node) => void generatePanoramaNode(node)}
-                    onDrawingRender={(node) => setDrawingRenderNodeId(node.id)}
                     onAnnotate={(node) => setAnnotateNodeId(node.id)}
                     onViewImage={(node) => setPreviewNodeId(node.id)}
                     onReversePrompt={createImageReversePromptNodes}
@@ -3193,6 +3153,7 @@ function InfiniteCanvasPage() {
                     onGridMerge={() => setGridMergeOpen(true)}
                     onArrange={arrangeCanvasImages}
                     onRunRole={() => setRoleWorkflowOpen(true)}
+                    onSaveAgent={saveSelectionAsAgent}
                     onClear={() => setClearConfirmOpen(true)}
                     onDeselect={deselectCanvas}
                     onBackgroundModeChange={setBackgroundMode}
@@ -3244,8 +3205,6 @@ function InfiniteCanvasPage() {
 
                 {upscaleNode?.metadata?.content ? <CanvasNodeUpscaleDialog dataUrl={upscaleNode.metadata.content} open={Boolean(upscaleNode)} onClose={() => setUpscaleNodeId(null)} onConfirm={(action) => runUpscaleAction(upscaleNode!, action)} /> : null}
 
-                {superResolveNode?.metadata?.content ? <CanvasNodeUpscaleDialog dataUrl={superResolveNode.metadata.content} open={Boolean(superResolveNode)} defaultMode="ai" onClose={() => setSuperResolveNodeId(null)} onConfirm={(action) => runUpscaleAction(superResolveNode!, action)} /> : null}
-
                 {angleNode?.metadata?.content ? <CanvasNodeAngleDialog dataUrl={angleNode.metadata.content} open={Boolean(angleNode)} onClose={() => setAngleNodeId(null)} onConfirm={(action) => runAngleAction(angleNode, action)} /> : null}
 
                 <CanvasNodeCompareDialog
@@ -3262,34 +3221,11 @@ function InfiniteCanvasPage() {
                     onClose={() => setPanoramaNodeId(null)}
                 />
 
-                {drawingRenderNode?.metadata?.content ? (
-                    <CanvasDrawingRenderDialog
-                        sourceUrl={drawingRenderNode.metadata.content}
-                        imageOptions={nodes.filter((node) => node.type === CanvasNodeType.Image && node.id !== drawingRenderNode.id && node.metadata?.content).map((node) => ({ label: node.title, value: node.id }))}
-                        open={Boolean(drawingRenderNode)}
-                        onClose={() => setDrawingRenderNodeId(null)}
-                        onConfirm={(params) => enqueueDrawingRender(drawingRenderNode, params)}
-                    />
-                ) : null}
-
                 <CanvasRoleWorkflowDialog
                     selectedNodes={roleWorkflowNodes.map((node) => ({ id: node.id, title: node.title, type: node.type }))}
                     open={roleWorkflowOpen}
                     onClose={() => setRoleWorkflowOpen(false)}
-                    onRun={(role, instruction) => void runRoleWorkflow(role, instruction)}
-                    onOpenChat={(role) => {
-                        setRoleWorkflowOpen(false);
-                        setRoleChatRoleId(role.id);
-                        setRoleChatOpen(true);
-                    }}
-                />
-
-                <CanvasRoleChatPanel
-                    open={roleChatOpen}
-                    initialRoleId={roleChatRoleId}
-                    selectedImageNodes={selectedImageNodes}
-                    onSaveText={insertAssistantText}
-                    onClose={() => setRoleChatOpen(false)}
+                    onRun={(target, instruction) => void runRoleWorkflow(target, instruction)}
                 />
 
                 {annotateNode?.metadata?.content ? <CanvasNodeAnnotateDialog dataUrl={annotateNode.metadata.content} open={Boolean(annotateNode)} onClose={() => setAnnotateNodeId(null)} onConfirm={(dataUrl) => void addAnnotatedImage(annotateNode, dataUrl)} onConfirmAndCrop={(dataUrl) => void addAnnotatedImage(annotateNode, dataUrl, true)} /> : null}

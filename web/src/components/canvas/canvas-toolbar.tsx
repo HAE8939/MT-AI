@@ -1,7 +1,7 @@
 import type { CSSProperties, MouseEvent as ReactMouseEvent, ReactNode, RefObject } from "react";
 import { useRef, useState } from "react";
 import { Button, Segmented, Switch } from "antd";
-import { CircleDot, Columns2, Download, Eraser, FolderOpen, Grid2x2, Group, Hand, Image as ImageIcon, Info, LayoutDashboard, LayoutGrid, Moon, Music2, Palette, Redo2, Settings2, Sparkles, Square, Sun, Trash2, Type, Undo2, Upload, Video } from "lucide-react";
+import { CircleDot, Columns2, Download, Eraser, FolderOpen, Grid2x2, Group, Hand, Image as ImageIcon, Info, LayoutDashboard, LayoutGrid, Moon, Music2, Palette, Redo2, Settings2, Sparkles, Square, Sun, Trash2, Type, Undo2, Upload, Video, Workflow } from "lucide-react";
 
 import { canvasThemes, type CanvasBackgroundMode, type CanvasColorTheme, type CanvasTheme } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
@@ -31,6 +31,7 @@ export function CanvasToolbar({
     onGridMerge,
     onArrange,
     onRunRole,
+    onSaveAgent,
     onClear,
     onDeselect,
     onBackgroundModeChange,
@@ -60,6 +61,7 @@ export function CanvasToolbar({
     onGridMerge: () => void;
     onArrange: () => void;
     onRunRole: () => void;
+    onSaveAgent: () => void;
     onClear: () => void;
     onDeselect: () => void;
     onBackgroundModeChange: (mode: CanvasBackgroundMode) => void;
@@ -139,12 +141,15 @@ export function CanvasToolbar({
                 <ToolbarButton id="tool-arrange" label="整理画布" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onArrange}>
                     <LayoutDashboard className="size-4.5" />
                 </ToolbarButton>
-                <ToolbarButton id="tool-role" label={canRunRole ? "专业角色" : "专业角色（请先选择节点）"} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onRunRole}>
+                <ToolbarButton id="tool-role" label={canRunRole ? "文档智能体" : "文档智能体（请先选择节点）"} hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onRunRole}>
                     <Sparkles className="size-4.5" />
                 </ToolbarButton>
                 {selectedCount ? (
                     <>
                         <Divider theme={theme} />
+                        <ToolbarButton id="tool-save-agent" label="保存为智能体" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onSaveAgent}>
+                            <Workflow className="size-4.5" />
+                        </ToolbarButton>
                         {canCompare ? (
                             <ToolbarButton id="tool-compare" label="对比图片" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onCompare}>
                                 <Columns2 className="size-4.5" />
@@ -332,7 +337,8 @@ function toolLabel(id: string) {
     if (id === "tool-compare") return "对比图片";
     if (id === "tool-batch-download") return "批量下载";
     if (id === "tool-grid-merge") return "宫格拼合";
-    if (id === "tool-role") return "专业角色";
+    if (id === "tool-role") return "文档智能体";
+    if (id === "tool-save-agent") return "保存为智能体";
     if (id === "tool-delete") return "删除选中";
     if (id === "tool-clear") return "清空画布";
     return "";

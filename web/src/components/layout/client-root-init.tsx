@@ -5,6 +5,9 @@ import { App } from "antd";
 import { createModelChannel, useConfigStore } from "@/stores/use-config-store";
 import { useWorkflowTaskRunner } from "@/hooks/use-workflow-task-runner";
 import { useCosUploadRunner } from "@/hooks/use-cos-upload-runner";
+import { registerRunningHubExecutor } from "@/services/providers/runninghub-executor";
+
+registerRunningHubExecutor();
 
 export function ClientRootInit({ children }: { children: ReactNode }) {
     useWorkflowTaskRunner();

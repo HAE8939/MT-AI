@@ -70,7 +70,7 @@ export type CanvasNodeMetadata = {
     workflowTaskId?: string;
     workflowType?: AiWorkflowType;
     workflowResultIndex?: number;
-    roleId?: string;
+    agentTemplateId?: string;
     panoramaProjection?: "equirectangular";
 };
 
