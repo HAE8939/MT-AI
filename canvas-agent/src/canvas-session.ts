@@ -10,10 +10,6 @@ type PendingRequest = { resolve: (value: unknown) => void; reject: (error: Error
 const SITE_TOOLS = new Set<ToolName>([
     "site_navigate",
     "canvas_list_projects",
-    "workbench_image_get_config",
-    "workbench_image_generate",
-    "workbench_video_get_config",
-    "workbench_video_generate",
     "prompts_search",
     "assets_list",
     "assets_add",
