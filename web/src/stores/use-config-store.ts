@@ -2,10 +2,15 @@ import { useMemo } from "react";
 import { create } from "zustand";
 import { persist } from "zustand/middleware";
 import { nanoid } from "nanoid";
-import type { BizyAirWorkflowConfig } from "@/types/ai-workflow";
 import type { CosConfig } from "@/types/cos-media";
 
 export type ApiCallFormat = "openai" | "gemini";
+
+/** 渠道的提供方类型：由渠道记录显式声明，取代 URL/模型名嗅探。
+ *  dongmu = 东木-AI 聚合平台（能力自描述 + 媒体异步任务）；
+ *  runninghub = RunningHub 云工作流（workflowId + nodeInfoList）；
+ *  compat = 裸 OpenAI/Gemini 兼容渠道（保底，含 Seedance/火山方舟）。 */
+export type ChannelProvider = "compat" | "dongmu" | "runninghub";
 
 export type ModelChannel = {
     id: string;
@@ -14,6 +19,7 @@ export type ModelChannel = {
     apiKey: string;
     apiFormat: ApiCallFormat;
     models: string[];
+    provider?: ChannelProvider;
 };
 
 export type AiConfig = {
@@ -47,14 +53,18 @@ export type AiConfig = {
     canvasImageCount: string;
 };
 
-export type WebdavSyncConfig = {
-    url: string;
-    username: string;
-    password: string;
-    directory: string;
-    lastSyncedAt: string;
+export type ConfigTabKey = "channels" | "models" | "preferences" | "cos" | "codex";
+
+/** RunningHub 云工作流平台配置（智能体模块使用） */
+export type RunningHubConfig = {
+    baseUrl: string;
+    apiKey: string;
 };
-export type ConfigTabKey = "channels" | "models" | "preferences" | "workflows" | "cos" | "webdav" | "codex";
+
+export const defaultRunningHubConfig: RunningHubConfig = {
+    baseUrl: "https://www.runninghub.cn",
+    apiKey: "",
+};
 
 export const CONFIG_STORE_KEY = "infinite-canvas:ai_config_store";
 export type ModelCapability = "image" | "video" | "text" | "audio";
@@ -63,7 +73,7 @@ const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 
 /** 项目配置文件（public/config.json）中可覆盖的字段 */
-type ProjectConfigJson = Partial<AiConfig> & { webdav?: Partial<WebdavSyncConfig> };
+type ProjectConfigJson = Partial<AiConfig>;
 const CONFIG_HASH_KEY = "infinite-canvas:config_json_hash";
 
 /** 简单字符串哈希，用于检测 config.json 内容是否变更 */
@@ -115,41 +125,27 @@ export const defaultConfig: AiConfig = {
     canvasImageCount: "3",
 };
 
-export const defaultWebdavSyncConfig: WebdavSyncConfig = {
-    url: "",
-    username: "",
-    password: "",
-    directory: "infinite-canvas",
-    lastSyncedAt: "",
-};
-
-export const defaultWorkflowConfig: { bizyair: BizyAirWorkflowConfig } = {
-    bizyair: { baseUrl: "https://api.bizyair.cn", apiKey: "" },
-};
-
 export const defaultCosConfig: CosConfig = {
-    enabled: true,
-    secretId: "REDACTED_COS_SECRET_ID",
-    secretKey: "REDACTED_COS_SECRET_KEY",
-    bucket: "dmds-images-1259154611",
-    region: "ap-guangzhou",
-    publicBaseUrl: "https://dmds-images-1259154611.cos.ap-guangzhou.myqcloud.com",
+    enabled: false,
+    secretId: "",
+    secretKey: "",
+    bucket: "",
+    region: "",
+    publicBaseUrl: "",
     objectPrefix: "infinite-canvas",
 };
 
 type ConfigStore = {
     config: AiConfig;
-    webdav: WebdavSyncConfig;
-    workflowConfig: { bizyair: BizyAirWorkflowConfig };
     cosConfig: CosConfig;
+    runninghub: RunningHubConfig;
     isConfigOpen: boolean;
     configTab: ConfigTabKey;
     shouldPromptContinue: boolean;
     initialized: boolean;
     updateConfig: <K extends keyof AiConfig>(key: K, value: AiConfig[K]) => void;
-    updateWebdavConfig: <K extends keyof WebdavSyncConfig>(key: K, value: WebdavSyncConfig[K]) => void;
-    updateBizyAirConfig: <K extends keyof BizyAirWorkflowConfig>(key: K, value: BizyAirWorkflowConfig[K]) => void;
     updateCosConfig: <K extends keyof CosConfig>(key: K, value: CosConfig[K]) => void;
+    updateRunningHubConfig: <K extends keyof RunningHubConfig>(key: K, value: RunningHubConfig[K]) => void;
     isAiConfigReady: (config: AiConfig, model: string) => boolean;
     openConfigDialog: (shouldPromptContinue?: boolean, tab?: ConfigTabKey) => void;
     setConfigDialogOpen: (isOpen: boolean) => void;
@@ -175,8 +171,17 @@ function isTextModelName(model: string) {
     return !isImageModelName(model) && !isVideoModelName(model) && !isAudioModelName(model);
 }
 
+/** Provider 能力发现声明的模型类型（如东木 /skills/models 的 type 字段），优先于模型名子串猜测 */
+const declaredModelCapabilities = new Map<string, ModelCapability>();
+
+export function registerModelCapabilities(entries: Array<{ name: string; capability: ModelCapability }>) {
+    entries.forEach(({ name, capability }) => declaredModelCapabilities.set(name, capability));
+}
+
 export function modelMatchesCapability(model: string, capability?: ModelCapability) {
     if (!capability) return true;
+    const declared = declaredModelCapabilities.get(modelOptionName(model));
+    if (declared) return declared === capability;
     if (capability === "image") return isImageModelName(model);
     if (capability === "video") return isVideoModelName(model);
     if (capability === "audio") return isAudioModelName(model);
@@ -260,9 +265,8 @@ export const useConfigStore = create<ConfigStore>()(
     persist(
         (set, get) => ({
             config: defaultConfig,
-            webdav: defaultWebdavSyncConfig,
-            workflowConfig: defaultWorkflowConfig,
             cosConfig: defaultCosConfig,
+            runninghub: defaultRunningHubConfig,
             isConfigOpen: false,
             configTab: "channels",
             shouldPromptContinue: false,
@@ -274,16 +278,8 @@ export const useConfigStore = create<ConfigStore>()(
                         [key]: value,
                     },
                 })),
-            updateWebdavConfig: (key, value) =>
-                set((state) => ({
-                    webdav: {
-                        ...state.webdav,
-                        [key]: value,
-                    },
-                })),
-            updateBizyAirConfig: (key, value) =>
-                set((state) => ({ workflowConfig: { ...state.workflowConfig, bizyair: { ...state.workflowConfig.bizyair, [key]: value } } })),
             updateCosConfig: (key, value) => set((state) => ({ cosConfig: { ...state.cosConfig, [key]: value } })),
+            updateRunningHubConfig: (key, value) => set((state) => ({ runninghub: { ...state.runninghub, [key]: value } })),
             isAiConfigReady: (config, model) => isAiConfigReady(config, model),
             openConfigDialog: (shouldPromptContinue = false, configTab = "channels") => set({ isConfigOpen: true, shouldPromptContinue, configTab }),
             setConfigDialogOpen: (isConfigOpen) => set({ isConfigOpen }),
@@ -297,25 +293,20 @@ export const useConfigStore = create<ConfigStore>()(
                 const userChannels = state.config.channels.filter((c) => !adminIds.has(c.id));
                 return {
                     config: { ...state.config, channels: userChannels },
-                    webdav: state.webdav,
-                    workflowConfig: state.workflowConfig,
                     cosConfig: state.cosConfig,
+                    runninghub: state.runninghub,
                 };
             },
             merge: (persisted, current) => {
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
-                const persistedWebdav = (persistedState.webdav || {}) as Partial<WebdavSyncConfig>;
-                const persistedWorkflowConfig = persistedState.workflowConfig?.bizyair || {};
                 const persistedCosConfig = persistedState.cosConfig || {};
-                const projectWebdav = loadedProjectConfig?.webdav;
                 const baseConfig = loadedProjectConfig ? { ...defaultConfig, ...loadedProjectConfig } : defaultConfig;
                 return {
                     ...current,
                     initialized: false,
-                    webdav: projectWebdav ? { ...defaultWebdavSyncConfig, ...projectWebdav } : { ...defaultWebdavSyncConfig, ...persistedWebdav },
-                    workflowConfig: { bizyair: { ...defaultWorkflowConfig.bizyair, ...persistedWorkflowConfig } },
                     cosConfig: { ...defaultCosConfig, ...persistedCosConfig },
+                    runninghub: { ...defaultRunningHubConfig, ...(persistedState.runninghub || {}) },
                     config: normalizeConfig(baseConfig, persistedConfig),
                 };
             },
@@ -326,7 +317,6 @@ export const useConfigStore = create<ConfigStore>()(
                     const rawHash = simpleHash(JSON.stringify(projectConfig));
                     const storedHash = window.localStorage.getItem(CONFIG_HASH_KEY);
                     const baseConfig = { ...defaultConfig, ...projectConfig };
-                    const projectWebdav = projectConfig.webdav;
 
                     // Extract user channels that were persisted (already filtered by partialize)
                     const persistedRaw = window.localStorage.getItem(CONFIG_STORE_KEY);
@@ -346,10 +336,8 @@ export const useConfigStore = create<ConfigStore>()(
                         // config.json changed — overwrite non-channel config, merge channels
                         const adminConfig = normalizeConfig(baseConfig, {});
                         const mergedChannels = [...adminConfig.channels, ...persistedChannels];
-                        const currentWebdav = useConfigStore.getState().webdav;
                         useConfigStore.setState({
                             config: { ...adminConfig, channels: mergedChannels },
-                            webdav: projectWebdav ? { ...currentWebdav, ...projectWebdav } : currentWebdav,
                             initialized: true,
                         });
                         window.localStorage.setItem(CONFIG_HASH_KEY, rawHash);
@@ -359,7 +347,6 @@ export const useConfigStore = create<ConfigStore>()(
                         const mergedChannels = [...normalizeConfig(baseConfig, {}).channels, ...persistedChannels];
                         useConfigStore.setState({
                             config: { ...currentState.config, channels: mergedChannels },
-                            webdav: projectWebdav ? { ...currentState.webdav, ...projectWebdav } : currentState.webdav,
                             initialized: true,
                         });
                     }
@@ -383,6 +370,7 @@ export function useEffectiveConfig() {
 
 export function createModelChannel(channel?: Partial<ModelChannel>): ModelChannel {
     const apiFormat = normalizeApiFormat(channel?.apiFormat);
+    const provider = channel?.provider === "dongmu" || channel?.provider === "runninghub" ? channel.provider : "compat";
     return {
         id: channel?.id?.trim() || nanoid(),
         name: channel?.name?.trim() || "新渠道",
@@ -390,6 +378,7 @@ export function createModelChannel(channel?: Partial<ModelChannel>): ModelChanne
         apiKey: channel?.apiKey || "",
         apiFormat,
         models: uniqueRawModels(channel?.models || []),
+        provider,
     };
 }
 
@@ -449,6 +438,7 @@ export function resolveModelRequestConfig(config: AiConfig, value: string) {
         baseUrl: channel.baseUrl,
         apiKey: channel.apiKey,
         apiFormat: channel.apiFormat,
+        provider: (channel.provider || "compat") as ChannelProvider,
     };
 }
 

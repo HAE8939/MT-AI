@@ -1,6 +1,6 @@
 import axios from "axios";
 
-import { buildApiUrl, resolveModelRequestConfig, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
+import { buildApiUrl, registerModelCapabilities, resolveModelRequestConfig, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { nanoid } from "nanoid";
 import { dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
@@ -218,6 +218,43 @@ function resolveGeminiImageSize(quality: string, dimensions: { width: number; he
 function supportsGeminiImageSize(model: string) {
     const value = model.toLowerCase();
     return value.includes("gemini-3") || value.includes("3.1") || value.includes("3-pro");
+}
+
+/** 东木-AI 生图：提交媒体任务并轮询，参考图以 base64 内联进 params（单文件≤10MB）。多张结果需多次任务，逐张并发。 */
+async function requestDongmuImages(config: AiConfig & { provider?: string }, prompt: string, references: ReferenceImage[], n: number, options?: RequestOptions) {
+    const { generateDongmuMedia } = await import("@/services/providers/dongmu");
+    const params: Record<string, unknown> = {};
+    if (references.length) {
+        const dataUrls = await Promise.all(references.map((image) => imageToDataUrl(image)));
+        params.image = dataUrls.length === 1 ? dataUrls[0] : dataUrls;
+    }
+    if (config.size && config.size !== "auto") params.size = config.size;
+    const runs = Array.from({ length: Math.max(1, n) }, () =>
+        generateDongmuMedia({ baseUrl: config.baseUrl, apiKey: config.apiKey }, { model: config.model, prompt, params }, { signal: options?.signal }),
+    );
+    try {
+        const urls = await Promise.all(runs);
+        const images = await Promise.all(
+            urls.map(async (url) => {
+                const response = await axios.get<Blob>(url, { responseType: "blob", signal: options?.signal });
+                const dataUrl = await blobToDataUrl(response.data);
+                return { id: nanoid(), dataUrl };
+            }),
+        );
+        return images;
+    } catch (error) {
+        if (axios.isCancel(error) || (error instanceof DOMException && error.name === "AbortError")) throw error;
+        throw new Error(readAxiosError(error, "请求失败"));
+    }
+}
+
+function blobToDataUrl(blob: Blob) {
+    return new Promise<string>((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onload = () => resolve(String(reader.result));
+        reader.onerror = () => reject(new Error("读取图片失败"));
+        reader.readAsDataURL(blob);
+    });
 }
 
 function resolveImageDataUrl(item: Record<string, unknown>) {
@@ -679,6 +716,9 @@ async function requestGeminiMaskEdit(config: AiConfig, prompt: string, reference
 export async function requestGeneration(config: AiConfig, prompt: string, options?: RequestOptions) {
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
+    if (requestConfig.provider === "dongmu") {
+        return requestDongmuImages(requestConfig, prompt, [], n, options);
+    }
     if (requestConfig.apiFormat === "gemini") {
         try {
             return await requestGeminiImages(requestConfig, prompt, [], n, options);
@@ -716,6 +756,10 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
     const requestConfig = resolveModelRequestConfig(config, config.model || config.imageModel);
     const n = Math.max(1, Math.min(15, Math.floor(Math.abs(Number(config.count)) || 1)));
     const requestPrompt = buildImageReferencePromptText(prompt, references);
+    if (requestConfig.provider === "dongmu") {
+        if (mask) throw new Error("东木-AI 渠道暂不支持蒙版局部重绘，请切换到 OpenAI/Gemini 兼容渠道");
+        return requestDongmuImages(requestConfig, requestPrompt, references, n, options);
+    }
     if (requestConfig.apiFormat === "gemini") {
         try {
             if (mask) return await requestGeminiMaskEdit(requestConfig, requestPrompt, references, mask, n, options);
@@ -796,6 +840,12 @@ export async function fetchImageModels(config: Pick<AiConfig, "baseUrl" | "apiKe
 }
 
 export async function fetchChannelModels(channel: ModelChannel) {
+    if (channel.provider === "dongmu") {
+        const { fetchDongmuModels } = await import("@/services/providers/dongmu");
+        const models = await fetchDongmuModels(channel);
+        registerModelCapabilities(models.map((model) => ({ name: model.name, capability: model.type === "chat" ? "text" : model.type })));
+        return models.map((model) => model.name).sort((a, b) => a.localeCompare(b));
+    }
     return fetchImageModels({ baseUrl: channel.baseUrl, apiKey: channel.apiKey, apiFormat: channel.apiFormat });
 }
 

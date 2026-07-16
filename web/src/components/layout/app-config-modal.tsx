@@ -1,12 +1,11 @@
-import { App, Button, Form, Input, Modal, Progress, Select, Switch, Tabs } from "antd";
+import { App, Button, Form, Input, Modal, Select, Switch, Tabs, Tag } from "antd";
 import { CircleAlert, Cloud, CloudUpload, KeyRound, Link2, Plus, RefreshCw, ShieldCheck, Sparkles, Trash2, Wifi } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { ModelPicker } from "@/components/model-picker";
 import { fetchChannelModels } from "@/services/api/image";
-import { syncAppDataToWebdav, type AppSyncDomainKey, type AppSyncProgressEvent } from "@/services/app-sync";
-import { testWebdavConnection, WEBDAV_MANIFEST_FILE_NAME } from "@/services/webdav-sync";
 import { testCosConnection } from "@/services/api/cos-media";
+import { DONGMU_BASE_URL } from "@/services/providers/dongmu";
 import { audioFormatOptions, audioVoiceOptions, normalizeAudioSpeedValue } from "@/lib/audio-generation";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { createModelChannel, defaultBaseUrlForApiFormat, filterModelsByCapability, modelOptionLabel, modelOptionsFromChannels, normalizeModelOptionValue, useConfigStore, type AiConfig, type ApiCallFormat, type ConfigTabKey, type ModelCapability, type ModelChannel } from "@/stores/use-config-store";
@@ -17,14 +16,6 @@ type ModelGroup = {
     modelsKey: "imageModels" | "videoModels" | "textModels" | "audioModels";
     defaultLabel: string;
     optionsLabel: string;
-};
-
-type WebdavDomainProgress = {
-    label: string;
-    stage: string;
-    current?: number;
-    total?: number;
-    status?: "active" | "success" | "exception";
 };
 
 const modelGroups: ModelGroup[] = [
@@ -39,13 +30,6 @@ const apiFormatOptions: Array<{ label: string; value: ApiCallFormat }> = [
     { label: "Gemini", value: "gemini" },
 ];
 
-const webdavDomainKeys: AppSyncDomainKey[] = ["canvas", "assets", "image-workbench", "video-workbench"];
-const webdavDomainLabels: Record<AppSyncDomainKey, string> = {
-    canvas: "画布",
-    assets: "我的素材",
-    "image-workbench": "生图工作台",
-    "video-workbench": "视频创作台",
-};
 const codexSetupSteps = [
     { title: "方式一：在 Codex 中使用插件", text: "先在 Codex App 安装 Infinite Canvas 插件，再通过插件启动画布，插件会自动启动本地 Canvas Agent 并带上连接信息。" },
     { title: "方式二：直接运行 Agent", text: "不使用 Codex 插件时，在终端运行下面命令，再回到网页里连接或手动填入 Local URL 和 Connect token。", command: "npx -y @basketikun/canvas-agent" },
@@ -53,32 +37,14 @@ const codexSetupSteps = [
 const codexPluginRemoveCommand = "codex plugin remove infinite-canvas";
 const codexMcpRemoveCommand = "codex mcp remove infinite-canvas";
 
-function createWebdavDomainProgress(): Record<AppSyncDomainKey, WebdavDomainProgress> {
-    return webdavDomainKeys.reduce(
-        (progress, key) => ({
-            ...progress,
-            [key]: { label: webdavDomainLabels[key], stage: "等待同步" },
-        }),
-        {} as Record<AppSyncDomainKey, WebdavDomainProgress>,
-    );
-}
-
 export function AppConfigPanel({ showDoneButton = false, initialTab = "channels" }: { showDoneButton?: boolean; initialTab?: ConfigTabKey }) {
     const { message } = App.useApp();
     const [activeTab, setActiveTab] = useState<ConfigTabKey>(initialTab);
     const [loadingChannelId, setLoadingChannelId] = useState("");
-    const [testingWebdav, setTestingWebdav] = useState(false);
     const [testingCos, setTestingCos] = useState(false);
-    const [syncingWebdav, setSyncingWebdav] = useState(false);
-    const [webdavSyncStatus, setWebdavSyncStatus] = useState("");
-    const [webdavDomainProgress, setWebdavDomainProgress] = useState(createWebdavDomainProgress);
     const config = useConfigStore((state) => state.config);
-    const webdav = useConfigStore((state) => state.webdav);
-    const workflowConfig = useConfigStore((state) => state.workflowConfig);
     const cosConfig = useConfigStore((state) => state.cosConfig);
     const updateConfig = useConfigStore((state) => state.updateConfig);
-    const updateWebdavConfig = useConfigStore((state) => state.updateWebdavConfig);
-    const updateBizyAirConfig = useConfigStore((state) => state.updateBizyAirConfig);
     const updateCosConfig = useConfigStore((state) => state.updateCosConfig);
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
@@ -94,7 +60,6 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const connectAgent = useAgentStore((state) => state.connectAgent);
     const disconnectAgent = useAgentStore((state) => state.disconnectAgent);
     const modelOptions = config.models.map((model) => ({ label: modelOptionLabel(config, model), value: model }));
-    const webdavReady = Boolean(webdav.url.trim());
     const cosReady = Boolean(cosConfig.secretId.trim() && cosConfig.secretKey.trim() && cosConfig.bucket.trim() && cosConfig.region.trim());
     useEffect(() => setActiveTab(initialTab), [initialTab]);
 
@@ -138,6 +103,15 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
 
     const addChannel = () => {
         updateChannels([...config.channels, createModelChannel({ name: `渠道 ${config.channels.length + 1}` })]);
+    };
+
+    const addDongmuChannel = () => {
+        if (config.channels.some((channel) => channel.provider === "dongmu")) {
+            message.info("已存在东木-AI 渠道，填入 API Key 后点击「拉取模型」即可");
+            return;
+        }
+        updateChannels([...config.channels, createModelChannel({ name: "东木-AI", provider: "dongmu", baseUrl: DONGMU_BASE_URL, apiFormat: "openai" })]);
+        message.success("已添加东木-AI 渠道，填入 API Key 后点击「拉取模型」");
     };
 
     const deleteChannel = (id: string) => {
@@ -190,57 +164,6 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
         if (!next.includes(config[group.modelKey])) updateConfig(group.modelKey, next[0] || "");
     };
 
-    const testWebdav = async () => {
-        if (!webdavReady) {
-            message.error("请先填写 WebDAV 地址");
-            return;
-        }
-        setTestingWebdav(true);
-        try {
-            await testWebdavConnection(webdav);
-            message.success("WebDAV 连接可用");
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "WebDAV 连接测试失败");
-        } finally {
-            setTestingWebdav(false);
-        }
-    };
-
-    const updateWebdavProgress = (event: AppSyncProgressEvent) => {
-        setWebdavSyncStatus(event.stage);
-        if (!event.domain) return;
-        setWebdavDomainProgress((current) => ({
-            ...current,
-            [event.domain as AppSyncDomainKey]: {
-                label: event.label || webdavDomainLabels[event.domain as AppSyncDomainKey],
-                stage: event.stage,
-                current: event.current,
-                total: event.total,
-                status: event.status,
-            },
-        }));
-    };
-
-    const syncWebdav = async () => {
-        if (!webdavReady) {
-            message.error("请先填写 WebDAV 地址");
-            return;
-        }
-        setSyncingWebdav(true);
-        setWebdavDomainProgress(createWebdavDomainProgress());
-        setWebdavSyncStatus("准备同步");
-        try {
-            const result = await syncAppDataToWebdav(webdav, updateWebdavProgress);
-            updateWebdavConfig("lastSyncedAt", result.syncedAt);
-            message.success(`同步完成：${result.projects} 个画布，${result.assets} 个素材，${result.imageLogs + result.videoLogs} 条记录，本次上传 ${result.uploadedFiles} 个文件 ${formatBytes(result.uploadedBytes)}`);
-        } catch (error) {
-            setWebdavSyncStatus(error instanceof Error ? error.message : "WebDAV 同步失败");
-            message.error(error instanceof Error ? error.message : "WebDAV 同步失败");
-        } finally {
-            setSyncingWebdav(false);
-        }
-    };
-
     const updateAgentConfig = (patch: { url?: string; token?: string }) => {
         setAgentState({ ...patch, connectError: "" });
         if (patch.url !== undefined) localStorage.setItem("canvas-agent-url", patch.url.trim().replace(/\/$/, ""));
@@ -275,6 +198,9 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                         <Button icon={<RefreshCw className="size-4" />} loading={Boolean(loadingChannelId)} onClick={() => void refreshAllModels()}>
                                             拉取全部
                                         </Button>
+                                        <Button icon={<Sparkles className="size-4" />} onClick={addDongmuChannel}>
+                                            添加东木-AI
+                                        </Button>
                                         <Button type="primary" icon={<Plus className="size-4" />} onClick={addChannel}>
                                             新增渠道
                                         </Button>
@@ -285,9 +211,12 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                         <section key={channel.id} className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
                                             <div className="mb-3 flex items-center justify-between gap-3">
                                                 <div className="min-w-0">
-                                                    <div className="truncate text-sm font-semibold">{channel.name || "未命名渠道"}</div>
+                                                    <div className="flex items-center gap-2 truncate text-sm font-semibold">
+                                                        {channel.name || "未命名渠道"}
+                                                        {channel.provider === "dongmu" ? <Tag color="purple" className="m-0 text-[11px]">聚合平台</Tag> : null}
+                                                    </div>
                                                     <div className="mt-1 text-xs text-stone-500">
-                                                        {apiFormatLabel(channel.apiFormat)} · 已保存 {channel.models.length} 个模型
+                                                        {channel.provider === "dongmu" ? "东木-AI · 模型能力自动识别" : apiFormatLabel(channel.apiFormat)} · 已保存 {channel.models.length} 个模型
                                                     </div>
                                                 </div>
                                                 <div className="flex shrink-0 gap-2">
@@ -399,32 +328,6 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                         ),
                     },
                     {
-                        key: "workflows",
-                        label: "专业工作流",
-                        children: (
-                            <Form layout="vertical" requiredMark={false}>
-                                <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
-                                    <div className="mb-3 flex items-start gap-2">
-                                        <Sparkles className="mt-0.5 size-4 text-stone-500" />
-                                        <div>
-                                            <div className="text-sm font-semibold">BizyAir 专业工作流</div>
-                                            <div className="mt-1 text-xs leading-5 text-stone-500">仅用于图纸渲染、双相机多角度和 AI 超分，不改变 OpenAI / Gemini 模型渠道。</div>
-                                        </div>
-                                    </div>
-                                    <div className="grid gap-4 md:grid-cols-2">
-                                        <Form.Item label="Base URL" className="mb-0">
-                                            <Input value={workflowConfig.bizyair.baseUrl} placeholder="https://api.bizyair.cn" onChange={(event) => updateBizyAirConfig("baseUrl", event.target.value)} />
-                                        </Form.Item>
-                                        <Form.Item label="API Key" className="mb-0">
-                                            <Input.Password value={workflowConfig.bizyair.apiKey} onChange={(event) => updateBizyAirConfig("apiKey", event.target.value)} />
-                                        </Form.Item>
-                                    </div>
-                                    <div className="mt-3 rounded-md bg-stone-100 px-3 py-2 text-xs leading-5 text-stone-500 dark:bg-stone-900">密钥只保存在当前浏览器配置中，不写入画布 JSON、任务记录或 WebDAV 同步数据。</div>
-                                </section>
-                            </Form>
-                        ),
-                    },
-                    {
                         key: "cos",
                         label: "腾讯云 COS",
                         children: (
@@ -466,50 +369,6 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             测试连接
                                         </Button>
                                     </div>
-                                </section>
-                            </Form>
-                        ),
-                    },
-                    {
-                        key: "webdav",
-                        label: "WebDAV",
-                        children: (
-                            <Form layout="vertical" requiredMark={false}>
-                                <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
-                                    <div className="mb-3 flex flex-wrap items-start justify-between gap-3">
-                                        <div>
-                                            <div className="flex items-center gap-2 text-sm font-semibold">
-                                                <Cloud className="size-4" />
-                                                WebDAV 同步
-                                            </div>
-                                            <div className="mt-1 text-xs text-stone-500">同步画布、我的素材、生成记录和本地媒体文件，不包含 AI API Key；浏览器会直接连接 WebDAV 服务。</div>
-                                        </div>
-                                        <div className="text-xs text-stone-500">{webdav.lastSyncedAt ? `上次同步 ${formatWebdavTime(webdav.lastSyncedAt)}` : "尚未同步"}</div>
-                                    </div>
-                                    <div className="grid gap-4 md:grid-cols-2">
-                                        <Form.Item label="WebDAV 地址" className="mb-4">
-                                            <Input value={webdav.url} placeholder="https://nas.example.com/webdav" onChange={(event) => updateWebdavConfig("url", event.target.value)} />
-                                        </Form.Item>
-                                        <Form.Item label="远程目录" extra={`会在该目录下分业务目录保存，每个目录包含 ${WEBDAV_MANIFEST_FILE_NAME} 和 files/`} className="mb-4">
-                                            <Input value={webdav.directory} placeholder="infinite-canvas" onChange={(event) => updateWebdavConfig("directory", event.target.value)} />
-                                        </Form.Item>
-                                        <Form.Item label="用户名" className="mb-0">
-                                            <Input value={webdav.username} autoComplete="username" onChange={(event) => updateWebdavConfig("username", event.target.value)} />
-                                        </Form.Item>
-                                        <Form.Item label="密码 / 应用密码" className="mb-0">
-                                            <Input.Password value={webdav.password} autoComplete="current-password" onChange={(event) => updateWebdavConfig("password", event.target.value)} />
-                                        </Form.Item>
-                                    </div>
-                                    <div className="mt-4 flex flex-wrap items-center gap-2">
-                                        <Button icon={<Wifi className="size-4" />} disabled={!webdavReady || syncingWebdav} loading={testingWebdav} onClick={() => void testWebdav()}>
-                                            测试连接
-                                        </Button>
-                                        <Button type="primary" icon={<RefreshCw className="size-4" />} disabled={!webdavReady || testingWebdav} loading={syncingWebdav} onClick={() => void syncWebdav()}>
-                                            {syncingWebdav ? "同步中" : "立即同步"}
-                                        </Button>
-                                        {webdavSyncStatus ? <span className="text-xs text-stone-500">{webdavSyncStatus}</span> : null}
-                                    </div>
-                                    {syncingWebdav || webdavSyncStatus ? <WebdavProgressGrid progress={webdavDomainProgress} /> : null}
                                 </section>
                             </Form>
                         ),
@@ -657,57 +516,4 @@ function uniqueModels(models: string[]) {
 
 function apiFormatLabel(apiFormat: ApiCallFormat) {
     return apiFormat === "gemini" ? "Gemini" : "OpenAI";
-}
-
-function formatWebdavTime(value: string) {
-    return new Date(value).toLocaleString("zh-CN", { month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" });
-}
-
-function WebdavProgressGrid({ progress }: { progress: Record<AppSyncDomainKey, WebdavDomainProgress> }) {
-    return (
-        <div className="mt-3 grid gap-2">
-            {webdavDomainKeys.map((key) => {
-                const item = progress[key];
-                const count = item.total ? `${item.current || 0}/${item.total}` : "";
-                return (
-                    <div key={key} className="rounded-md border border-stone-200 px-3 py-2 dark:border-stone-800">
-                        <div className="mb-1 flex min-w-0 items-center justify-between gap-3 text-xs">
-                            <span className="shrink-0 font-medium text-stone-700 dark:text-stone-200">{item.label}</span>
-                            <span className="min-w-0 truncate text-right text-stone-500">
-                                {item.stage}
-                                {count ? ` · ${count}` : ""}
-                            </span>
-                        </div>
-                        <Progress percent={getWebdavProgressPercent(item)} size="small" status={getWebdavProgressStatus(item)} showInfo={false} />
-                    </div>
-                );
-            })}
-        </div>
-    );
-}
-
-function getWebdavProgressPercent(item: WebdavDomainProgress) {
-    if (item.status === "success") return 100;
-    if (item.total) return Math.min(100, Math.round(((item.current || 0) / item.total) * 100));
-    if (item.status === "exception") return 100;
-    if (item.stage === "等待同步") return 0;
-    if (item.stage === "读取远端清单") return 12;
-    if (item.stage === "读取本地数据") return 24;
-    if (item.stage === "下载缺失媒体") return 36;
-    if (item.stage === "写入本地合并结果") return 58;
-    if (item.stage === "上传新增媒体") return 66;
-    if (item.stage === "媒体已齐全" || item.stage === "媒体无需上传") return 74;
-    if (item.stage.startsWith("上传清单")) return 90;
-    return item.status === "active" ? 30 : 0;
-}
-
-function getWebdavProgressStatus(item: WebdavDomainProgress): "normal" | "active" | "success" | "exception" {
-    if (item.status === "success" || item.status === "exception") return item.status;
-    return item.status === "active" ? "active" : "normal";
-}
-
-function formatBytes(bytes: number) {
-    if (bytes < 1024) return `${bytes}B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)}KB`;
-    return `${(bytes / 1024 / 1024).toFixed(1)}MB`;
 }

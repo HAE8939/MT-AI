@@ -24,7 +24,7 @@ type ApiEnvelope<T> = T | { code?: number | string; data?: T | null; msg?: strin
 type RequestOptions = { signal?: AbortSignal };
 
 export type VideoGenerationResult = { blob?: Blob; url?: string; mimeType?: string };
-export type VideoGenerationTask = { id: string; provider: "openai" | "seedance"; model: string };
+export type VideoGenerationTask = { id: string; provider: "openai" | "seedance" | "dongmu"; model: string };
 export type VideoGenerationTaskState = { status: "pending" } | { status: "completed"; result: VideoGenerationResult } | { status: "failed"; error: string };
 
 function aiApiUrl(config: AiConfig, path: string) {
@@ -56,6 +56,9 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
     const selectedModel = (config.model || config.videoModel).trim();
     const requestConfig = resolveModelRequestConfig(config, selectedModel);
     assertVideoConfig(requestConfig, requestConfig.model);
+    if (requestConfig.provider === "dongmu") {
+        return createDongmuVideoTask(requestConfig, selectedModel, prompt, references, options);
+    }
     if (isSeedanceVideoConfig(requestConfig)) {
         return createSeedanceTask(requestConfig, selectedModel, prompt, references, videoReferences, audioReferences, options);
     }
@@ -68,7 +71,36 @@ export async function createVideoGenerationTask(config: AiConfig, prompt: string
 export async function pollVideoGenerationTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
     const requestConfig = resolveModelRequestConfig(config, task.model);
     assertVideoConfig(requestConfig, requestConfig.model);
+    if (task.provider === "dongmu") return pollDongmuVideoTask(requestConfig, task, options);
     return task.provider === "seedance" ? pollSeedanceTask(requestConfig, task, options) : pollOpenAIVideoTask(requestConfig, task, options);
+}
+
+async function createDongmuVideoTask(config: AiConfig, model: string, prompt: string, references: ReferenceImage[], options?: RequestOptions): Promise<VideoGenerationTask> {
+    const { submitDongmuMediaTask } = await import("@/services/providers/dongmu");
+    const params: Record<string, unknown> = {};
+    if (references.length) {
+        const urls = await Promise.all(references.slice(0, 7).map((image) => resolveVideoReferenceImageUrl(image)));
+        params.image = urls.length === 1 ? urls[0] : urls;
+    }
+    if (config.videoSeconds) params.duration = config.videoSeconds;
+    try {
+        const taskId = await submitDongmuMediaTask({ baseUrl: config.baseUrl, apiKey: config.apiKey }, { model: modelOptionName(model), prompt, params }, options?.signal);
+        return { id: taskId, provider: "dongmu", model };
+    } catch (error) {
+        throw new Error(readAxiosError(error, "视频任务创建失败"));
+    }
+}
+
+async function pollDongmuVideoTask(config: AiConfig, task: VideoGenerationTask, options?: RequestOptions): Promise<VideoGenerationTaskState> {
+    const { pollDongmuMediaTask } = await import("@/services/providers/dongmu");
+    try {
+        const state = await pollDongmuMediaTask({ baseUrl: config.baseUrl, apiKey: config.apiKey }, task.id, options?.signal);
+        if (!state.final) return { status: "pending" };
+        if (state.failed || !state.resultUrl) return { status: "failed", error: state.error || "视频生成失败" };
+        return { status: "completed", result: await videoResultFromUrl(state.resultUrl, options) };
+    } catch (error) {
+        throw new Error(readAxiosError(error, "视频任务查询失败"));
+    }
 }
 
 export async function storeGeneratedVideo(result: VideoGenerationResult): Promise<UploadedFile> {
@@ -204,6 +236,16 @@ async function buildSeedanceContent(config: AiConfig, prompt: string, references
 async function resolveSeedanceImageUrl(config: AiConfig, image: ReferenceImage) {
     const directUrl = image.url || image.dataUrl;
     if (isPublicMediaUrl(directUrl) || directUrl.startsWith("asset://")) return directUrl;
+    if (image.storageKey) return ensureCosMediaUrl({ storageKey: image.storageKey, fileName: image.name || "reference.png", mimeType: image.type || "image/png", mediaKind: "images", mediaId: image.id });
+    const dataUrl = await imageToDataUrl(image);
+    if (!dataUrl) throw new Error("参考图读取失败，请换一张图片或重新上传");
+    return dataUrl;
+}
+
+/** 东木参考图：优先公网直链 / COS 直链，本地图退化为 base64 内联（单文件不超过 10MB） */
+async function resolveVideoReferenceImageUrl(image: ReferenceImage) {
+    const directUrl = image.url || image.dataUrl;
+    if (isPublicMediaUrl(directUrl)) return directUrl;
     if (image.storageKey) return ensureCosMediaUrl({ storageKey: image.storageKey, fileName: image.name || "reference.png", mimeType: image.type || "image/png", mediaKind: "images", mediaId: image.id });
     const dataUrl = await imageToDataUrl(image);
     if (!dataUrl) throw new Error("参考图读取失败，请换一张图片或重新上传");
