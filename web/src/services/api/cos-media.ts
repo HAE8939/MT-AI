@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 
+import { hmacSha1Hex, sha1Hex } from "@/lib/sha1";
 import type { CosConfig, CosMediaKind } from "@/types/cos-media";
 
 type CosObjectUrlInput = Pick<CosConfig, "bucket" | "region" | "publicBaseUrl"> & { key: string };
@@ -62,12 +63,15 @@ async function buildCosAuthorization(config: CosConfig, method: string, key: str
     return [`q-sign-algorithm=sha1`, `q-ak=${config.secretId}`, `q-sign-time=${keyTime}`, `q-key-time=${keyTime}`, `q-header-list=${headerList}`, `q-url-param-list=`, `q-signature=${signature}`].join("&");
 }
 
+// 局域网 HTTP 等非安全上下文没有 crypto.subtle，签名降级为纯 JS 实现
 async function hmacSha1(key: string, value: string) {
+    if (!globalThis.crypto?.subtle) return hmacSha1Hex(key, value);
     const cryptoKey = await crypto.subtle.importKey("raw", new TextEncoder().encode(key), { name: "HMAC", hash: "SHA-1" }, false, ["sign"]);
     return toHex(await crypto.subtle.sign("HMAC", cryptoKey, new TextEncoder().encode(value)));
 }
 
 async function sha1(value: string) {
+    if (!globalThis.crypto?.subtle) return sha1Hex(value);
     return toHex(await crypto.subtle.digest("SHA-1", new TextEncoder().encode(value)));
 }
 
