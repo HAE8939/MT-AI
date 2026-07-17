@@ -53,7 +53,7 @@ export type AiConfig = {
     canvasImageCount: string;
 };
 
-export type ConfigTabKey = "channels" | "models" | "preferences" | "cos" | "codex";
+export type ConfigTabKey = "channels" | "models" | "preferences" | "cos" | "runninghub" | "codex";
 
 /** RunningHub 云工作流平台配置（智能体模块使用） */
 export type RunningHubConfig = {

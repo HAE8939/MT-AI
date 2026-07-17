@@ -44,8 +44,10 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
     const [testingCos, setTestingCos] = useState(false);
     const config = useConfigStore((state) => state.config);
     const cosConfig = useConfigStore((state) => state.cosConfig);
+    const runninghub = useConfigStore((state) => state.runninghub);
     const updateConfig = useConfigStore((state) => state.updateConfig);
     const updateCosConfig = useConfigStore((state) => state.updateCosConfig);
+    const updateRunningHubConfig = useConfigStore((state) => state.updateRunningHubConfig);
     const shouldPromptContinue = useConfigStore((state) => state.shouldPromptContinue);
     const setConfigDialogOpen = useConfigStore((state) => state.setConfigDialogOpen);
     const clearPromptContinue = useConfigStore((state) => state.clearPromptContinue);
@@ -369,6 +371,32 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             测试连接
                                         </Button>
                                     </div>
+                                </section>
+                            </Form>
+                        ),
+                    },
+                    {
+                        key: "runninghub",
+                        label: "RunningHub",
+                        children: (
+                            <Form layout="vertical" requiredMark={false}>
+                                <section className="rounded-lg border border-stone-200 p-3 dark:border-stone-800">
+                                    <div className="mb-4 flex items-start gap-2">
+                                        <Cloud className="mt-0.5 size-4 text-stone-500" />
+                                        <div>
+                                            <div className="text-sm font-semibold">RunningHub 云工作流</div>
+                                            <div className="mt-1 text-xs leading-5 text-stone-500">API Key 在 RunningHub 控制台「API调用」页获取；工作流页登记后即可用此 Key 提交任务。</div>
+                                        </div>
+                                    </div>
+                                    <div className="grid gap-4 md:grid-cols-2">
+                                        <Form.Item label="Base URL" className="mb-0">
+                                            <Input value={runninghub.baseUrl} placeholder="https://www.runninghub.cn" onChange={(event) => updateRunningHubConfig("baseUrl", event.target.value)} />
+                                        </Form.Item>
+                                        <Form.Item label="API Key" className="mb-0">
+                                            <Input.Password value={runninghub.apiKey} placeholder="32 位 API Key" onChange={(event) => updateRunningHubConfig("apiKey", event.target.value)} />
+                                        </Form.Item>
+                                    </div>
+                                    <div className="mt-4 text-xs leading-5 text-stone-500">提醒：工作流必须先在 RunningHub 平台手动成功运行过一次，才能通过 API 调用。</div>
                                 </section>
                             </Form>
                         ),

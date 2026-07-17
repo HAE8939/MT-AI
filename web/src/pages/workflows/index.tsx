@@ -120,7 +120,7 @@ export default function WorkflowsPage() {
     );
 }
 
-/** 登记 RunningHub 工作流：workflowId + 暴露给用户的参数映射 */
+/** 登记 RunningHub 工作流：workflowId + 暴露给用户的参数映射；支持粘贴「导出工作流 API」JSON 自动识别参数 */
 function RunningHubRegisterDialog({ open, onClose }: { open: boolean; onClose: () => void }) {
     const { message } = App.useApp();
     const addTemplate = useAgentTemplateStore((state) => state.addTemplate);
@@ -128,6 +128,27 @@ function RunningHubRegisterDialog({ open, onClose }: { open: boolean; onClose: (
     const updateRunningHubConfig = useConfigStore((state) => state.updateRunningHubConfig);
     const [form] = Form.useForm<{ name: string; description: string; category: AgentCategory; workflowId: string; apiKey: string }>();
     const [fields, setFields] = useState<RunningHubParamField[]>([{ nodeId: "", fieldName: "text", label: "提示词", kind: "text" }]);
+    const [importJson, setImportJson] = useState("");
+
+    /** 解析 api_format JSON：LoadImage → 图片参数；CLIPTextEncode（text 为字符串而非连线）→ 文本参数 */
+    const importFromApiJson = () => {
+        try {
+            const parsed = JSON.parse(importJson) as Record<string, { inputs?: Record<string, unknown>; class_type?: string; _meta?: { title?: string } }>;
+            const next: RunningHubParamField[] = [];
+            Object.entries(parsed).forEach(([nodeId, node]) => {
+                if (node?.class_type === "LoadImage") next.push({ nodeId, fieldName: "image", label: node._meta?.title || `图片 ${nodeId}`, kind: "image" });
+                else if (node?.class_type === "CLIPTextEncode" && typeof node.inputs?.text === "string") next.push({ nodeId, fieldName: "text", label: node._meta?.title || `提示词 ${nodeId}`, kind: "text", defaultValue: node.inputs.text });
+            });
+            if (!next.length) {
+                message.warning("JSON 中没有识别到 LoadImage 或提示词节点，请手动填写参数");
+                return;
+            }
+            setFields(next);
+            message.success(`已识别 ${next.length} 个参数，可继续手动增删调整`);
+        } catch {
+            message.error("JSON 解析失败，请确认粘贴的是「导出工作流 API」的完整 JSON");
+        }
+    };
 
     const save = async () => {
         const values = await form.validateFields();
@@ -146,6 +167,7 @@ function RunningHubRegisterDialog({ open, onClose }: { open: boolean; onClose: (
         message.success("工作流已登记");
         form.resetFields();
         setFields([{ nodeId: "", fieldName: "text", label: "提示词", kind: "text" }]);
+        setImportJson("");
         onClose();
     };
 
@@ -153,7 +175,7 @@ function RunningHubRegisterDialog({ open, onClose }: { open: boolean; onClose: (
         <Modal title="登记 RunningHub 工作流" open={open} onCancel={onClose} onOk={() => void save()} okText="登记" cancelText="取消" width={720} destroyOnHidden>
             <Form form={form} layout="vertical" requiredMark={false} initialValues={{ category: "image", apiKey: runninghub.apiKey }}>
                 <div className="rounded-md bg-stone-100 px-3 py-2 text-xs leading-5 text-stone-600 dark:bg-stone-900 dark:text-stone-300">
-                    工作流须先在 RunningHub 平台手动成功运行过一次。workflowId 取自工作流页面链接末尾数字；nodeId 和 fieldName 参考工作台「导出工作流 API」的 JSON。
+                    工作流须先在 RunningHub 平台手动成功运行过一次。workflowId 取自工作流页面链接末尾数字；参数可直接粘贴工作台「导出工作流 API」的 JSON 自动识别，也可手动填写。
                 </div>
                 <div className="mt-4 grid gap-4 md:grid-cols-2">
                     <Form.Item name="name" label="工作流名称" rules={[{ required: true, message: "请填写名称" }]} className="mb-0">
@@ -173,14 +195,27 @@ function RunningHubRegisterDialog({ open, onClose }: { open: boolean; onClose: (
                     </Form.Item>
                 </div>
                 <div className="mt-4">
+                    <div className="mb-2 text-sm font-medium">导入工作流 API JSON（可选）</div>
+                    <Input.TextArea
+                        rows={3}
+                        placeholder="粘贴 RunningHub 工作台「导出工作流 API」得到的完整 JSON，自动识别图片与提示词参数"
+                        value={importJson}
+                        onChange={(event) => setImportJson(event.target.value)}
+                    />
+                    <Button size="small" className="mt-2" disabled={!importJson.trim()} onClick={importFromApiJson}>
+                        解析并生成参数
+                    </Button>
+                </div>
+                <div className="mt-4">
                     <div className="mb-2 text-sm font-medium">用户可填参数（映射到 nodeInfoList）</div>
                     <div className="space-y-2">
                         {fields.map((field, index) => (
-                            <div key={index} className="grid grid-cols-[90px_110px_1fr_96px_32px] items-center gap-2">
+                            <div key={index} className="grid grid-cols-[72px_96px_1fr_1fr_88px_32px] items-center gap-2">
                                 <Input placeholder="nodeId" value={field.nodeId} onChange={(event) => setFields((current) => current.map((item, i) => (i === index ? { ...item, nodeId: event.target.value } : item)))} />
                                 <Input placeholder="fieldName" value={field.fieldName} onChange={(event) => setFields((current) => current.map((item, i) => (i === index ? { ...item, fieldName: event.target.value } : item)))} />
                                 <Input placeholder="展示名（如：主体描述）" value={field.label} onChange={(event) => setFields((current) => current.map((item, i) => (i === index ? { ...item, label: event.target.value } : item)))} />
-                                <Select value={field.kind} options={[{ value: "text", label: "文本" }, { value: "image", label: "图片URL" }]} onChange={(kind) => setFields((current) => current.map((item, i) => (i === index ? { ...item, kind } : item)))} />
+                                <Input placeholder="默认值（可空）" value={field.defaultValue || ""} onChange={(event) => setFields((current) => current.map((item, i) => (i === index ? { ...item, defaultValue: event.target.value } : item)))} />
+                                <Select value={field.kind} options={[{ value: "text", label: "文本" }, { value: "image", label: "图片" }]} onChange={(kind) => setFields((current) => current.map((item, i) => (i === index ? { ...item, kind } : item)))} />
                                 <Button type="text" size="small" danger icon={<Trash2 className="size-3.5" />} disabled={fields.length <= 1} onClick={() => setFields((current) => current.filter((_, i) => i !== index))} />
                             </div>
                         ))}
