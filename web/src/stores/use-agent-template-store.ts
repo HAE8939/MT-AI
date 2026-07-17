@@ -26,8 +26,28 @@ function mergeTemplates(builtins: AgentTemplate[], users: AgentTemplate[], edits
     return [...builtins.filter((item) => !deleted.has(item.id)).map((item) => edits[item.id] || item), ...users];
 }
 
-/** 原 roles.json 的角色定义直接转换为内置文档分析智能体 */
+/** 预置的 RunningHub 云工作流模板。fields 为空 = 运行时提交空 nodeInfoList，按工作流默认参数出图（v2 链路验证用例） */
+const RUNNINGHUB_BUILTIN_TEMPLATES: AgentTemplate[] = [
+    {
+        id: "builtin-runninghub-z-image",
+        name: "Z Image 亿级像素文生图",
+        description: "RunningHub 云工作流示例（作者 StarTed）。直接运行即按工作流内置的默认提示词出图；要自定义提示词等参数，请在 RunningHub 工作台导出该工作流的 API JSON 后重新登记。",
+        avatar: "🖼️",
+        category: "image",
+        source: "builtin",
+        spec: { kind: "runninghub", workflowId: "1997246493079834625", fields: [] },
+        createdAt: new Date(0).toISOString(),
+        updatedAt: new Date(0).toISOString(),
+    },
+];
+
+/** 内置模板 = 预置云工作流 + 原 roles.json 角色转换的文档分析智能体 */
 async function loadBuiltinTemplates(): Promise<AgentTemplate[]> {
+    return [...RUNNINGHUB_BUILTIN_TEMPLATES, ...(await loadRoleTemplates())];
+}
+
+/** 原 roles.json 的角色定义直接转换为内置文档分析智能体 */
+async function loadRoleTemplates(): Promise<AgentTemplate[]> {
     try {
         const response = await fetch(`${import.meta.env.BASE_URL || "/"}roles.json`, { cache: "no-store" });
         const data = await response.json();

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
++ [调整] RunningHub 接口迁移 OpenAPI v2：提交改为 `POST /openapi/v2/run/workflow/{workflowId}`、查询改为 `POST /openapi/v2/query`（状态语义 QUEUED/RUNNING/SUCCESS/FAILED，结果取 `results[].url`）、上传改为 `POST /openapi/v2/media/upload/binary`，鉴权统一从请求体 apiKey 改为 `Authorization: Bearer` 请求头；HTTP 错误会解析响应体中的 errorMessage 展示真实原因。
++ [新增] 预置内置云工作流模板「Z Image 亿级像素文生图」（workflowId 1997246493079834625）作为 v2 链路验证用例：参数留空按工作流默认提示词出图，自定义参数需导出 API JSON 后重新登记。
 + [调整] RunningHub 默认地址因 CN 站政策变动切换为国际站 www.runninghub.ai：新默认值、配置页占位符与执行器兜底同步更新，历史配置中保存的旧 CN 默认地址在启动时自动迁移（手动改过的自定义地址不受影响）。
 + [新增] RunningHub 工作流支持画布本地图片作为输入：运行弹窗的图片参数可选画布上任意图片节点（blob/本地图在提交时经 RunningHub 上传接口换取 fileName），公网 URL 仍直接透传；上传期间按钮显示进度态。
 + [新增] 配置弹窗新增「RunningHub」标签页（Base URL + API Key），与执行器报错提示对齐；Key 仍可在登记弹窗填写，两处同源。
