@@ -147,7 +147,7 @@ export function CanvasToolbar({
                 {selectedCount ? (
                     <>
                         <Divider theme={theme} />
-                        <ToolbarButton id="tool-save-agent" label="保存为智能体" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onSaveAgent}>
+                        <ToolbarButton id="tool-save-agent" label="保存为工作流模板" hovered={hovered} hoverStyle={hoverStyle} wrapRef={wrapRef} onTipX={setTipX} onHover={setHovered} onClick={onSaveAgent}>
                             <Workflow className="size-4.5" />
                         </ToolbarButton>
                         {canCompare ? (
@@ -338,7 +338,7 @@ function toolLabel(id: string) {
     if (id === "tool-batch-download") return "批量下载";
     if (id === "tool-grid-merge") return "宫格拼合";
     if (id === "tool-role") return "文档智能体";
-    if (id === "tool-save-agent") return "保存为智能体";
+    if (id === "tool-save-agent") return "保存为工作流模板";
     if (id === "tool-delete") return "删除选中";
     if (id === "tool-clear") return "清空画布";
     return "";

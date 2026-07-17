@@ -9,7 +9,8 @@ export type AgentEventLog = { id: string; time: string; title: string; text: str
 export type AgentPendingToolCall = { requestId: string; name: string; input?: { ops?: CanvasAgentOp[]; path?: string } & Record<string, unknown> };
 export type AgentCanvasContext = { snapshot: CanvasAgentSnapshot; applyOps: (ops?: CanvasAgentOp[]) => CanvasAgentSnapshot; undoOps: () => CanvasAgentSnapshot | null; canUndo: boolean };
 export type AgentThreadSummary = { id: string; preview: string; name?: string | null; cwd?: string; status?: string; source?: unknown; createdAt?: number; updatedAt?: number };
-export type AgentPanelTab = "chat" | "setup" | "history" | "log";
+export type AgentPanelTab = "chat" | "workflow" | "setup" | "history" | "log";
+export type AgentChatEngine = "model" | "codex";
 
 const CONNECT_TIMEOUT_MS = 6000;
 let agentSource: EventSource | null = null;
@@ -36,6 +37,10 @@ type AgentStore = {
     workspacePath: string;
     loadingThreads: boolean;
     activeTab: AgentPanelTab;
+    /** 对话引擎：项目文本模型（默认）或本地 codex Agent */
+    engine: AgentChatEngine;
+    /** 项目模型对话使用的模型（空串 = 跟随配置的 textModel） */
+    chatModel: string;
     confirmTools: boolean;
     activity: string;
     connectError: string;
@@ -74,7 +79,9 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     activeThreadId: "",
     workspacePath: "",
     loadingThreads: false,
-    activeTab: "setup",
+    activeTab: "chat",
+    engine: (typeof window === "undefined" ? "model" : (localStorage.getItem("canvas-chat-engine") as AgentChatEngine)) || "model",
+    chatModel: typeof window === "undefined" ? "" : localStorage.getItem("canvas-chat-model") || "",
     confirmTools: true,
     activity: "就绪",
     connectError: "",

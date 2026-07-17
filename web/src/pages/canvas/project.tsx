@@ -878,6 +878,40 @@ function InfiniteCanvasPage() {
         setAgentCanvasContext({ snapshot: agentSnapshot, applyOps: applyAgentOps, undoOps: undoAgentOps, canUndo: Boolean(agentUndoSnapshot) });
         return () => setAgentCanvasContext(null);
     }, [agentSnapshot, applyAgentOps, agentUndoSnapshot, setAgentCanvasContext, undoAgentOps]);
+    /** 画布节点一键添加到右侧对话：图片进附件，文字进输入框 */
+    const addNodeToChat = useCallback(
+        async (nodeId: string) => {
+            const node = nodesRef.current.find((item) => item.id === nodeId);
+            if (!node) return;
+            const { attachments, prompt, setAgentState, openPanel } = useAgentStore.getState();
+            if (node.type === CanvasNodeType.Image && node.metadata?.content) {
+                if (attachments.length >= 6) {
+                    message.warning("对话图片附件最多 6 张");
+                    return;
+                }
+                try {
+                    const dataUrl = await imageToDataUrl({ storageKey: node.metadata.storageKey, url: node.metadata.content });
+                    setAgentState({
+                        attachments: [...attachments, { id: nanoid(), name: `${node.title || "画布图片"}.png`, type: node.metadata.mimeType || "image/png", size: dataUrl.length, url: "", dataUrl }],
+                        activeTab: "chat",
+                    });
+                } catch {
+                    message.error("读取图片失败，无法添加到对话");
+                    return;
+                }
+            } else {
+                const text = (node.type === CanvasNodeType.Text ? node.metadata?.content : node.metadata?.prompt)?.trim();
+                if (!text) {
+                    message.warning("该节点没有可加入对话的内容");
+                    return;
+                }
+                setAgentState({ prompt: [prompt.trim(), `【${node.title}】\n${text}`].filter(Boolean).join("\n\n"), activeTab: "chat" });
+            }
+            openPanel();
+            message.success("已添加到对话");
+        },
+        [message],
+    );
     const createNode = useCallback(
         (type: CanvasNodeType, position?: Position) => {
             const targetPosition = position || getCanvasCenter();
@@ -2261,7 +2295,7 @@ function InfiniteCanvasPage() {
         }));
         const hasGeneration = templateNodes.some((node) => node.metadata?.prompt || node.metadata?.generationMode);
         const category = selected.some((node) => node.type === CanvasNodeType.Video) ? ("video" as const) : ("image" as const);
-        const name = window.prompt("给这个智能体起个名字：", "画布模板")?.trim();
+        const name = window.prompt("给这个工作流模板起个名字：", "画布模板")?.trim();
         if (!name) return;
         useAgentTemplateStore.getState().addTemplate({
             name,
@@ -2269,7 +2303,7 @@ function InfiniteCanvasPage() {
             category,
             spec: { kind: "canvas", nodes: templateNodes, connections: innerConnections },
         });
-        message.success("已保存为智能体，可在「智能体」页查看并插入其他画布");
+        message.success("已保存为工作流模板，可在「工作流」页或面板「工作流」标签中运行");
     }, [message, selectedNodeIds]);
 
     const handleUploadRequest = useCallback((nodeId?: string, position?: Position) => {
@@ -3172,6 +3206,16 @@ function InfiniteCanvasPage() {
                         menu={contextMenu}
                         referencePurpose={contextMenu.type === "node" ? nodeById.get(contextMenu.nodeId)?.metadata?.referencePurpose : undefined}
                         showReferencePurpose={contextMenu.type === "node" && nodeById.get(contextMenu.nodeId)?.type === CanvasNodeType.Image && Boolean(nodeById.get(contextMenu.nodeId)?.metadata?.content)}
+                        onAddToChat={(() => {
+                            if (contextMenu.type !== "node") return undefined;
+                            const node = nodeById.get(contextMenu.nodeId);
+                            const hasContent = node && (node.type === CanvasNodeType.Image ? Boolean(node.metadata?.content) : Boolean((node.type === CanvasNodeType.Text ? node.metadata?.content : node.metadata?.prompt)?.trim()));
+                            if (!hasContent) return undefined;
+                            return () => {
+                                void addNodeToChat(contextMenu.nodeId);
+                                setContextMenu(null);
+                            };
+                        })()}
                         onSetReferencePurpose={(purpose) => {
                             if (contextMenu.type !== "node") return;
                             setNodeReferencePurpose(contextMenu.nodeId, purpose);

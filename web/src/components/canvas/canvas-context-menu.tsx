@@ -1,6 +1,6 @@
 import { useEffect } from "react";
 import type { ReactNode } from "react";
-import { Check, Plus, Tag, Trash2 } from "lucide-react";
+import { Check, MessageSquarePlus, Plus, Tag, Trash2 } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { imageReferencePurposeLabels } from "@/lib/image-reference-prompt";
@@ -20,6 +20,7 @@ export function CanvasNodeContextMenu({
     onDuplicate,
     onDelete,
     onSetReferencePurpose,
+    onAddToChat,
 }: {
     menu: ContextMenuState;
     referencePurpose?: CanvasImageReferencePurpose;
@@ -28,6 +29,8 @@ export function CanvasNodeContextMenu({
     onDuplicate: () => void;
     onDelete: () => void;
     onSetReferencePurpose?: (purpose: CanvasImageReferencePurpose | undefined) => void;
+    /** 把节点内容（图片/文字）一键加入右侧对话 */
+    onAddToChat?: () => void;
 }) {
     const theme = canvasThemes[useThemeStore((state) => state.theme)];
 
@@ -48,6 +51,7 @@ export function CanvasNodeContextMenu({
             onPointerDown={(event) => event.stopPropagation()}
         >
             {menu.type === "node" ? <MenuButton icon={<Plus className="size-4" />} label="复制" onClick={onDuplicate} /> : null}
+            {menu.type === "node" && onAddToChat ? <MenuButton icon={<MessageSquarePlus className="size-4" />} label="添加到对话" onClick={onAddToChat} /> : null}
             {menu.type === "node" && showReferencePurpose && onSetReferencePurpose ? (
                 <>
                     <div className="mx-3 my-1 h-px" style={{ background: theme.toolbar.border }} />

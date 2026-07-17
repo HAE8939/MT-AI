@@ -2,15 +2,17 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { App, Button, Input, Segmented, Tooltip } from "antd";
 import copyToClipboard from "copy-to-clipboard";
-import { Copy, FolderOpen, History, KeyRound, Link2, LoaderCircle, PlugZap, Plus, RefreshCw, RotateCcw, Square, Terminal, Trash2 } from "lucide-react";
+import { Copy, FolderOpen, KeyRound, Link2, PlugZap, Plus, RefreshCw, RotateCcw, Terminal, Trash2 } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
 import { useThemeStore } from "@/stores/use-theme-store";
 import { useUserStore } from "@/stores/use-user-store";
-import { useAgentStore, type AgentAttachment, type AgentChatItem, type AgentEventLog, type AgentPanelTab, type AgentPendingToolCall, type AgentThreadSummary } from "@/stores/use-agent-store";
+import { useAgentStore, type AgentAttachment, type AgentChatEngine, type AgentChatItem, type AgentEventLog, type AgentPanelTab, type AgentPendingToolCall, type AgentThreadSummary } from "@/stores/use-agent-store";
 import { summarizeCanvasAgentOps, type CanvasAgentOp, type CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
 import { isSiteTool, runSiteTool, SITE_TOOL_LABELS } from "@/lib/agent/agent-site-tools";
 import { AgentChatComposer, AgentChatMessage, AgentPanelTabs, AgentPendingToolCard, AgentWorkingMessage, type CanvasAgentChatAttachment } from "./canvas-agent-chat-ui";
+import { CanvasModelChatView, ChatHistoryView } from "./canvas-model-chat-view";
+import { CanvasWorkflowTab } from "./canvas-workflow-tab";
 
 const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_PAYLOAD_BYTES = 28 * 1024 * 1024;
@@ -45,7 +47,7 @@ export function CanvasLocalAgentPanel({ embedded, headless, autoConnect }: { emb
     const { message, modal } = App.useApp();
     const [searchParams] = useSearchParams();
     const navigate = useNavigate();
-    const { width, url, token, connected, enabled, prompt, attachments, sending, waiting, messages, eventLogs, threads, activeThreadId, workspacePath, loadingThreads, activeTab, confirmTools, activity, connectError, pendingTool, canvasContext, setAgentState, addMessage: pushMessage, addEventLog: pushEventLog, clearEventLogs } = useAgentStore();
+    const { width, url, token, connected, enabled, prompt, attachments, sending, waiting, messages, eventLogs, threads, activeThreadId, workspacePath, loadingThreads, activeTab, engine, confirmTools, activity, connectError, pendingTool, canvasContext, setAgentState, addMessage: pushMessage, addEventLog: pushEventLog, clearEventLogs } = useAgentStore();
     const listRef = useRef<HTMLDivElement>(null);
     const canvasContextRef = useRef(canvasContext);
     const confirmToolsRef = useRef(confirmTools);
@@ -392,7 +394,7 @@ export function CanvasLocalAgentPanel({ embedded, headless, autoConnect }: { emb
         setAgentState({ loadingThreads: true });
         try {
             const data = await fetchAgentJson<AgentThreadResponse>(endpoint, token, "/agent/codex/threads/new", { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
-            setAgentState({ activeThreadId: data.thread?.id || data.workspace?.activeThreadId || "", messages: [], activeTab: "chat", activity: "新对话" });
+            setAgentState({ activeThreadId: data.thread?.id || data.workspace?.activeThreadId || "", messages: [], activeTab: "chat", engine: "codex", activity: "新对话" });
             await loadThreads();
         } catch (error) {
             addEventLog("新建对话失败", error);
@@ -407,7 +409,7 @@ export function CanvasLocalAgentPanel({ embedded, headless, autoConnect }: { emb
         setAgentState({ loadingThreads: true });
         try {
             const data = await fetchAgentJson<AgentThreadResponse>(endpoint, token, `/agent/codex/threads/${encodeURIComponent(threadId)}/resume`, { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify({}) });
-            setAgentState({ activeThreadId: data.thread?.id || threadId, messages: normalizeHistoryMessages(data.messages || []), activeTab: "chat", activity: "已恢复会话" });
+            setAgentState({ activeThreadId: data.thread?.id || threadId, messages: normalizeHistoryMessages(data.messages || []), activeTab: "chat", engine: "codex", activity: "已恢复会话" });
             await loadThreads();
         } catch (error) {
             addEventLog("恢复对话失败", error);
@@ -495,17 +497,32 @@ export function CanvasLocalAgentPanel({ embedded, headless, autoConnect }: { emb
                 value={activeTab}
                 theme={theme}
                 items={[
-                    { value: "setup", label: "连接", icon: <PlugZap className="size-3.5" /> },
                     { value: "chat", label: "对话" },
-                    { value: "history", label: "历史", icon: <History className="size-3.5" />, count: threads.length },
+                    { value: "workflow", label: "工作流" },
+                    { value: "history", label: "历史" },
                     { value: "log", label: "日志", icon: <Terminal className="size-3.5" />, count: eventLogs.length },
+                    { value: "setup", label: "连接", icon: <PlugZap className="size-3.5" /> },
                 ]}
                 onChange={(activeTab) => {
                     setAgentState({ activeTab });
-                    if (activeTab === "history") void loadThreads();
+                    if (activeTab === "setup" && connected) void loadThreads();
                 }}
                 right={
                     <>
+                        {activeTab === "chat" ? (
+                            <Segmented
+                                size="small"
+                                value={engine}
+                                options={[
+                                    { label: "模型", value: "model" },
+                                    { label: "Codex", value: "codex" },
+                                ]}
+                                onChange={(value) => {
+                                    localStorage.setItem("canvas-chat-engine", String(value));
+                                    setAgentState({ engine: value as AgentChatEngine });
+                                }}
+                            />
+                        ) : null}
                         <Button size="small" type="text" disabled={!canvasContext?.canUndo} icon={<RotateCcw className="size-3.5" />} onClick={undoLastTool}>
                             撤销
                         </Button>
@@ -514,31 +531,41 @@ export function CanvasLocalAgentPanel({ embedded, headless, autoConnect }: { emb
             />
 
             {activeTab === "setup" ? (
-                <AgentConnectView
-                    theme={theme}
-                    url={url}
-                    token={token}
-                    enabled={enabled}
-                    connected={connected}
-                    activity={activity}
-                    connectError={connectError}
-                    onUrlChange={(url) => setAgentState({ url, connectError: "" })}
-                    onTokenChange={(token) => setAgentState({ token, connectError: "" })}
-                    onToggleEnabled={toggleAgentConnection}
-                />
+                <>
+                    <AgentConnectView
+                        theme={theme}
+                        url={url}
+                        token={token}
+                        enabled={enabled}
+                        connected={connected}
+                        activity={activity}
+                        connectError={connectError}
+                        onUrlChange={(url) => setAgentState({ url, connectError: "" })}
+                        onTokenChange={(token) => setAgentState({ token, connectError: "" })}
+                        onToggleEnabled={toggleAgentConnection}
+                    />
+                    {connected ? (
+                        <div className="flex max-h-[42%] shrink-0 flex-col overflow-hidden border-t" style={{ borderColor: theme.node.stroke }}>
+                            <div className="px-3 pt-2 text-xs font-medium" style={{ color: theme.node.muted }}>Codex 对话记录</div>
+                            <AgentHistoryView
+                                theme={theme}
+                                threads={threads}
+                                activeThreadId={activeThreadId}
+                                workspacePath={workspacePath}
+                                loading={loadingThreads}
+                                connected={connected}
+                                onRefresh={() => void loadThreads()}
+                                onNewThread={() => void startNewThread()}
+                                onResumeThread={(threadId) => void resumeThread(threadId)}
+                                onDeleteThread={confirmDeleteThread}
+                            />
+                        </div>
+                    ) : null}
+                </>
+            ) : activeTab === "workflow" ? (
+                <CanvasWorkflowTab theme={theme} />
             ) : activeTab === "history" ? (
-                <AgentHistoryView
-                    theme={theme}
-                    threads={threads}
-                    activeThreadId={activeThreadId}
-                    workspacePath={workspacePath}
-                    loading={loadingThreads}
-                    connected={connected}
-                    onRefresh={() => void loadThreads()}
-                    onNewThread={() => void startNewThread()}
-                    onResumeThread={(threadId) => void resumeThread(threadId)}
-                    onDeleteThread={confirmDeleteThread}
-                />
+                <ChatHistoryView theme={theme} />
             ) : activeTab === "log" ? (
                 <AgentLogView
                     logs={eventLogs}
@@ -548,9 +575,16 @@ export function CanvasLocalAgentPanel({ embedded, headless, autoConnect }: { emb
                     onCopied={(text) => message.success(text)}
                     onCopyBlocked={(text) => message.warning(text)}
                 />
+            ) : engine === "model" ? (
+                <CanvasModelChatView theme={theme} />
             ) : (
                 <>
                     <div ref={listRef} className="thin-scrollbar min-h-0 flex-1 space-y-4 overflow-y-auto p-4">
+                        {!connected ? (
+                            <div className="px-3 py-10 text-center text-sm" style={{ color: theme.node.muted }}>
+                                Codex 引擎需要连接本地 Agent，请先到「连接」标签完成连接。
+                            </div>
+                        ) : null}
                         {messages.map((item) => (
                             <AgentChatMessage key={item.id} item={agentMessageToChatMessage(item)} theme={theme} user={user} />
                         ))}

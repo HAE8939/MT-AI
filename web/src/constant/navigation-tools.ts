@@ -7,8 +7,8 @@ export const navigationTools = [
         icon: Maximize2,
     },
     {
-        slug: "agents",
-        label: "智能体",
+        slug: "workflows",
+        label: "工作流",
         icon: Workflow,
     },
     {
