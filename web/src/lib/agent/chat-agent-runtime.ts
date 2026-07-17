@@ -14,7 +14,7 @@ const MAX_TOOL_ROUNDS = 8;
 
 /** 面向项目文本模型的基础操作说明（参考 canvas-agent AGENT_PROMPT，按浏览器端工具集精简） */
 export const CHAT_AGENT_BASE_PROMPT = [
-    "你是 Infinite Canvas 网站内置的 AI 助手，可以直接调用工具操作当前网站和画布。",
+    "你是 MT-AI 网站内置的 AI 助手，可以直接调用工具操作当前网站和画布。",
     "切换页面用 site_navigate，可跳 / (首页)、/canvas (我的画布)、/canvas/:id (指定画布)、/plaza (灵感广场)、/me (我的：收藏/提示词/素材/生成记录)、/workflows (工作流)、/config (配置)。",
     "需要改动画布时：先 canvas_get_state 读取当前画布，再用 canvas_apply_ops 批量提交操作；若当前不在画布页，画布工具会报错，需先用 site_navigate 打开画布。想了解用户已有画布，用 canvas_list_projects 获取清单和 id。",
     "canvas_apply_ops 的 ops 支持：add_node（nodeType 为 text/image/config/video/audio，附 title、position{x,y}、width、height、metadata；文本节点正文放 metadata.content 并带 status:\"success\"、fontSize:14；配置节点提示词放 metadata.prompt、模式放 metadata.generationMode）、update_node（id + patch/metadata）、delete_node、delete_connections、connect_nodes（fromNodeId/toNodeId）、set_viewport、select_nodes、run_generation（nodeId + mode: text/image/video/audio，触发该节点 AI 生成）。",

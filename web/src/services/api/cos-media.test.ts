@@ -4,7 +4,7 @@ import { buildCosObjectKey, buildCosObjectUrl } from "./cos-media";
 
 describe("COS media helpers", () => {
     test("builds a stable dated object key", () => {
-        expect(buildCosObjectKey("images", "photo.png", new Date("2026-07-15T08:00:00Z"), "fixed-id", "infinite-canvas")).toBe("infinite-canvas/images/2026/07/fixed-id.png");
+        expect(buildCosObjectKey("images", "photo.png", new Date("2026-07-15T08:00:00Z"), "fixed-id", "mt-ai")).toBe("mt-ai/images/2026/07/fixed-id.png");
     });
 
     test("normalizes a custom object prefix", () => {

@@ -1,6 +1,6 @@
-# Infinite Canvas Codex Plugin
+# MT-AI Codex Plugin
 
-这个插件把 Infinite Canvas 的本地 Canvas Agent MCP 打包给 Codex app 使用，让 Codex 能打开本地画布、读取当前节点、创建内容并触发生成流程。
+这个插件把 MT-AI 的本地 Canvas Agent MCP 打包给 Codex app 使用，让 Codex 能打开本地画布、读取当前节点、创建内容并触发生成流程。
 
 ## 安装
 
@@ -9,10 +9,10 @@
 把下面这段发给 Codex：
 
 ```text
-请从 https://github.com/basketikun/infinite-canvas.git 安装 Infinite Canvas Codex 插件。
-请 clone 仓库到 ~/plugins/infinite-canvas，确认 plugins/infinite-canvas/.codex-plugin/plugin.json 存在，
-把 plugins/infinite-canvas 加入 personal marketplace，先运行 codex plugin marketplace add ~，
-再运行 codex plugin add infinite-canvas@personal。
+请从 https://github.com/basketikun/infinite-canvas.git 安装 MT-AI Codex 插件。
+请 clone 仓库到 ~/plugins/infinite-canvas，确认 plugins/mt-ai/.codex-plugin/plugin.json 存在，
+把 plugins/mt-ai 加入 personal marketplace，先运行 codex plugin marketplace add ~，
+再运行 codex plugin add mt-ai@personal。
 安装后请校验插件，并告诉我是否需要开启一个新对话来加载新技能和 MCP 工具。
 ```
 
@@ -25,7 +25,7 @@ mkdir -p ~/plugins
 git clone https://github.com/basketikun/infinite-canvas.git ~/plugins/infinite-canvas
 ```
 
-确保 `~/.agents/plugins/marketplace.json` 中有 Infinite Canvas 条目，注意 `path` 指向仓库里的插件子目录：
+确保 `~/.agents/plugins/marketplace.json` 中有 MT-AI 条目，注意 `path` 指向仓库里的插件子目录：
 
 ```json
 {
@@ -35,10 +35,10 @@ git clone https://github.com/basketikun/infinite-canvas.git ~/plugins/infinite-c
   },
   "plugins": [
     {
-      "name": "infinite-canvas",
+      "name": "mt-ai",
       "source": {
         "source": "local",
-        "path": "./plugins/infinite-canvas/plugins/infinite-canvas"
+        "path": "./plugins/infinite-canvas/plugins/mt-ai"
       },
       "policy": {
         "installation": "AVAILABLE",
@@ -54,44 +54,44 @@ git clone https://github.com/basketikun/infinite-canvas.git ~/plugins/infinite-c
 
 ```bash
 codex plugin marketplace add ~
-codex plugin add infinite-canvas@personal
+codex plugin add mt-ai@personal
 ```
 
 安装后建议开启一个新的 Codex 对话，让新的 skill 和 MCP 工具完整加载。
 
-安装 Codex 插件后会加载 `infinite-canvas` MCP。这个 MCP 内置工具较多，会增加 Codex 上下文和 token 消耗；不使用插件时建议移除插件：
+安装 Codex 插件后会加载 `mt-ai` MCP。这个 MCP 内置工具较多，会增加 Codex 上下文和 token 消耗；不使用插件时建议移除插件：
 
 ```bash
-codex plugin remove infinite-canvas
+codex plugin remove mt-ai
 ```
 
 如果你另外手动执行过 `codex mcp add`，再移除手动添加的 MCP：
 
 ```bash
-codex mcp remove infinite-canvas
+codex mcp remove mt-ai
 ```
 
 ### 本仓库开发调试
 
-如果你就在 Infinite Canvas 仓库中调试插件，可以直接添加仓库自带 marketplace。建议使用仓库绝对路径，避免 Codex 从其他工作目录解析失败：
+如果你就在 MT-AI 仓库中调试插件，可以直接添加仓库自带 marketplace。建议使用仓库绝对路径，避免 Codex 从其他工作目录解析失败：
 
 ```bash
 cd /path/to/infinite-canvas
 codex plugin marketplace add "$(pwd)"
-codex plugin add infinite-canvas@infinite-canvas-local
+codex plugin add mt-ai@mt-ai-local
 ```
 
 ## 使用
 
-1. 新建 Codex 线程后说“打开 Infinite Canvas”。
-2. 插件会确认当前仓库的本地画布服务是否已运行；端口被占用时会检查进程归属，不会把其他项目的 `3000` 当作 Infinite Canvas。
+1. 新建 Codex 线程后说“打开 MT-AI”。
+2. 插件会确认当前仓库的本地画布服务是否已运行；端口被占用时会检查进程归属，不会把其他项目的 `3000` 当作 MT-AI。
 3. 确认或启动后，插件会直接打开新建画布 URL，并自动尝试连接本地 Agent。
 4. 画布打开后，让 Codex 读取或操作当前画布。
 
 常用提示：
 
 ```text
-打开 Infinite Canvas
+打开 MT-AI
 读取当前画布并总结节点结构
 根据选中节点创建一组生图提示词
 ```

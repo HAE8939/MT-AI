@@ -132,7 +132,7 @@ export const defaultCosConfig: CosConfig = {
     bucket: "",
     region: "",
     publicBaseUrl: "",
-    objectPrefix: "infinite-canvas",
+    objectPrefix: "mt-ai",
 };
 
 type ConfigStore = {

@@ -31,11 +31,11 @@ const apiFormatOptions: Array<{ label: string; value: ApiCallFormat }> = [
 ];
 
 const codexSetupSteps = [
-    { title: "方式一：在 Codex 中使用插件", text: "先在 Codex App 安装 Infinite Canvas 插件，再通过插件启动画布，插件会自动启动本地 Canvas Agent 并带上连接信息。" },
+    { title: "方式一：在 Codex 中使用插件", text: "先在 Codex App 安装 MT-AI 插件，再通过插件启动画布，插件会自动启动本地 Canvas Agent 并带上连接信息。" },
     { title: "方式二：直接运行 Agent", text: "不使用 Codex 插件时，在终端运行下面命令，再回到网页里连接或手动填入 Local URL 和 Connect token。", command: "npx -y @basketikun/canvas-agent" },
 ];
-const codexPluginRemoveCommand = "codex plugin remove infinite-canvas";
-const codexMcpRemoveCommand = "codex mcp remove infinite-canvas";
+const codexPluginRemoveCommand = "codex plugin remove mt-ai";
+const codexMcpRemoveCommand = "codex mcp remove mt-ai";
 
 export function AppConfigPanel({ showDoneButton = false, initialTab = "channels" }: { showDoneButton?: boolean; initialTab?: ConfigTabKey }) {
     const { message } = App.useApp();
@@ -362,7 +362,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                             <Input value={cosConfig.publicBaseUrl} placeholder="留空时使用 COS 默认域名" onChange={(event) => updateCosConfig("publicBaseUrl", event.target.value)} />
                                         </Form.Item>
                                         <Form.Item label="对象前缀" className="mb-0">
-                                            <Input value={cosConfig.objectPrefix} placeholder="infinite-canvas" onChange={(event) => updateCosConfig("objectPrefix", event.target.value)} />
+                                            <Input value={cosConfig.objectPrefix} placeholder="mt-ai" onChange={(event) => updateCosConfig("objectPrefix", event.target.value)} />
                                         </Form.Item>
                                     </div>
                                     <div className="mt-4 flex items-center justify-between gap-3">

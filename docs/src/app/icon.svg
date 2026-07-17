@@ -1,4 +1,6 @@
-<svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <path d="M32 8L58 54H46L32 29L18 54H6L32 8Z" fill="currentColor"/>
-  <path d="M32 40L40 54H24L32 40Z" fill="currentColor"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 99.59 93.24" width="64" height="64">
+  <g fill="currentColor">
+    <polygon points="49.43 33.08 53.19 17.27 18.05 17.27 0 93.24 5.79 93.24 22.58 22.54 46.15 22.54 43.64 33.08 31.47 33.08 30.76 38.36 42.39 38.36 34.67 70.85 40.46 70.85 48.18 38.36 71.07 38.36 58.04 93.24 63.83 93.24 78.12 33.08 49.43 33.08"/>
+    <polygon points="22.87 0 21.65 5.28 92.54 5.28 76.97 70.85 82.76 70.85 99.59 0 22.87 0"/>
+  </g>
 </svg>

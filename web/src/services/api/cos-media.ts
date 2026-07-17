@@ -5,7 +5,7 @@ import type { CosConfig, CosMediaKind } from "@/types/cos-media";
 type CosObjectUrlInput = Pick<CosConfig, "bucket" | "region" | "publicBaseUrl"> & { key: string };
 type CosUploadInput = { blob: Blob; fileName: string; kind: CosMediaKind; key?: string };
 
-export function buildCosObjectKey(kind: CosMediaKind, fileName: string, date = new Date(), id = nanoid(), prefix = "infinite-canvas") {
+export function buildCosObjectKey(kind: CosMediaKind, fileName: string, date = new Date(), id = nanoid(), prefix = "mt-ai") {
     const extension = fileExtension(fileName);
     const normalizedPrefix = prefix.trim().replace(/^\/+|\/+$/g, "");
     const month = String(date.getUTCMonth() + 1).padStart(2, "0");

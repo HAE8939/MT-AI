@@ -1,14 +1,14 @@
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo Infinite Canvas - Codex Desktop 配置脚本
+echo MT-AI - Codex Desktop 配置脚本
 echo ========================================
 echo.
 
 :: 检查 canvas-agent 目录
 if not exist "canvas-agent" (
     echo [错误] 未找到 canvas-agent 目录
-    echo 请确保在 infinite-canvas 仓库根目录下运行此脚本
+    echo 请确保在 MT-AI 仓库根目录下运行此脚本
     pause
     exit /b 1
 )
@@ -48,7 +48,7 @@ if errorlevel 1 (
 ) else (
     echo.
     echo 安装插件...
-    call codex plugin add infinite-canvas@infinite-canvas-local
+    call codex plugin add mt-ai@mt-ai-local
     if errorlevel 1 (
         echo [警告] 插件安装失败
     ) else (
@@ -59,7 +59,7 @@ if errorlevel 1 (
         echo.
         echo 下一步：
         echo 1. 开启新的 Codex 对话
-        echo 2. 输入"打开 Infinite Canvas"
+        echo 2. 输入"打开 MT-AI"
         echo 3. 开始使用 AI 操作画布
     )
 )

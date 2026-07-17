@@ -1,8 +1,8 @@
 @echo off
 chcp 65001 >nul
-title Infinite Canvas - 一键启动
+title MT-AI - 一键启动
 echo ========================================
-echo Infinite Canvas 一键启动
+echo MT-AI 一键启动
 echo ========================================
 echo.
 

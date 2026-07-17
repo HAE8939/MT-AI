@@ -100,12 +100,12 @@ export function startHttpServer() {
     app.use((error: Error, _req: Request, res: Response, _next: NextFunction) => res.status(500).json({ ok: false, error: error.message }));
 
     app.listen(port, "127.0.0.1", () => {
-        console.log("Infinite Canvas Agent");
+        console.log("MT-AI Agent");
         console.log(`Local URL: ${config.url}`);
         console.log(`Connect token: ${config.token}`);
         console.log("Codex MCP is not installed by this command.");
-        console.log("Optional MCP add: codex mcp add infinite-canvas -- npx -y @basketikun/canvas-agent mcp");
-        console.log("Remove manually added MCP: codex mcp remove infinite-canvas");
+        console.log("Optional MCP add: codex mcp add mt-ai -- npx -y @basketikun/canvas-agent mcp");
+        console.log("Remove manually added MCP: codex mcp remove mt-ai");
     });
 }
 

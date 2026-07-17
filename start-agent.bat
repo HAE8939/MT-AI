@@ -1,7 +1,7 @@
 @echo off
 chcp 65001 >nul
 echo ========================================
-echo Infinite Canvas Agent
+echo MT-AI Agent
 echo ========================================
 echo.
 
