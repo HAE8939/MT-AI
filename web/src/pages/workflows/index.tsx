@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
-import { App, Button, Empty, Form, Input, Modal, Popconfirm, Segmented, Select, Tag } from "antd";
+import { App, Button, Empty, Form, Input, Modal, Popconfirm, Segmented, Select, Tag, Upload } from "antd";
 import { useNavigate } from "react-router-dom";
-import { Cloud, LayoutTemplate, Play, Plus, Trash2 } from "lucide-react";
+import { Cloud, FileUp, LayoutTemplate, Play, Plus, Trash2 } from "lucide-react";
 import { nanoid } from "nanoid";
 
 import { useAgentTemplateStore } from "@/stores/use-agent-template-store";
@@ -131,9 +131,9 @@ function RunningHubRegisterDialog({ open, onClose }: { open: boolean; onClose: (
     const [importJson, setImportJson] = useState("");
 
     /** 解析 api_format JSON：LoadImage → 图片参数；CLIPTextEncode（text 为字符串而非连线）→ 文本参数 */
-    const importFromApiJson = () => {
+    const importFromApiJson = (source?: string) => {
         try {
-            const parsed = JSON.parse(importJson) as Record<string, { inputs?: Record<string, unknown>; class_type?: string; _meta?: { title?: string } }>;
+            const parsed = JSON.parse(source ?? importJson) as Record<string, { inputs?: Record<string, unknown>; class_type?: string; _meta?: { title?: string } }>;
             const next: RunningHubParamField[] = [];
             Object.entries(parsed).forEach(([nodeId, node]) => {
                 if (node?.class_type === "LoadImage") next.push({ nodeId, fieldName: "image", label: node._meta?.title || `图片 ${nodeId}`, kind: "image" });
@@ -147,6 +147,17 @@ function RunningHubRegisterDialog({ open, onClose }: { open: boolean; onClose: (
             message.success(`已识别 ${next.length} 个参数，可继续手动增删调整`);
         } catch {
             message.error("JSON 解析失败，请确认粘贴的是「导出工作流 API」的完整 JSON");
+        }
+    };
+
+    /** 一键导入本地 JSON 文件：读入文本框并立即解析 */
+    const importFromJsonFile = async (file: File) => {
+        try {
+            const text = await file.text();
+            setImportJson(text);
+            importFromApiJson(text);
+        } catch {
+            message.error("读取文件失败，请重试或改用粘贴方式");
         }
     };
 
@@ -202,9 +213,23 @@ function RunningHubRegisterDialog({ open, onClose }: { open: boolean; onClose: (
                         value={importJson}
                         onChange={(event) => setImportJson(event.target.value)}
                     />
-                    <Button size="small" className="mt-2" disabled={!importJson.trim()} onClick={importFromApiJson}>
-                        解析并生成参数
-                    </Button>
+                    <div className="mt-2 flex gap-2">
+                        <Upload
+                            accept=".json,application/json"
+                            showUploadList={false}
+                            beforeUpload={(file) => {
+                                void importFromJsonFile(file);
+                                return Upload.LIST_IGNORE;
+                            }}
+                        >
+                            <Button size="small" icon={<FileUp className="size-3.5" />}>
+                                一键导入 JSON 文件
+                            </Button>
+                        </Upload>
+                        <Button size="small" disabled={!importJson.trim()} onClick={() => importFromApiJson()}>
+                            解析并生成参数
+                        </Button>
+                    </div>
                 </div>
                 <div className="mt-4">
                     <div className="mb-2 text-sm font-medium">用户可填参数（映射到 nodeInfoList）</div>
