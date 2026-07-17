@@ -2,7 +2,7 @@
   "mcpServers": {
     "mt-ai": {
       "command": "npx",
-      "args": ["-y", "@basketikun/canvas-agent", "mcp"],
+      "args": ["-y", "@hae8939/mt-ai-agent", "mcp"],
       "startup_timeout_sec": 20,
       "tool_timeout_sec": 90
     }
