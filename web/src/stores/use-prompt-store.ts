@@ -7,10 +7,23 @@ import { localForageStorage } from "@/lib/localforage-storage";
 export const PROMPT_COLORS = ["pink", "mint", "lavender", "lemon", "peach", "sky", "lilac", "sage"] as const;
 export type PromptColor = (typeof PROMPT_COLORS)[number];
 
+/** 组合式标签：label 为芯片显示文本，value 为组合进 JSON 的实际值（缺省用 label），selected 为初始勾选 */
+export type PromptComboTag = {
+    label: string;
+    value?: string;
+    selected?: boolean;
+};
+
 /** 组合式卡片的键值标签组：勾选 tags 后组合为 JSON 提示词 */
 export type PromptKeyGroup = {
     key: string;
-    tags: string[];
+    tags: PromptComboTag[];
+};
+
+/** 组合卡片：name 为组合 JSON 的一级键；空串表示该卡片键值平铺到顶层 */
+export type PromptComboCard = {
+    name: string;
+    keys: PromptKeyGroup[];
 };
 
 export type Prompt = {
@@ -21,8 +34,8 @@ export type Prompt = {
     tags: string[];
     createdAt: string;
     updatedAt: string;
-    /** 可选：键值标签组，存在且非空时卡片为「组合式卡片」 */
-    keys?: PromptKeyGroup[];
+    /** 可选：组合卡片，存在且非空时卡片为「组合式卡片」 */
+    cards?: PromptComboCard[];
     /** 可选：所属分组名，缺省为未分组 */
     group?: string;
     /** 可选：卡片颜色主题 */
@@ -53,21 +66,40 @@ function createPromptId() {
     return `prompt-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
-/** 清洗 keys 字段，容忍导入/JSON 中的脏数据；无有效内容时返回 undefined */
-export function normalizePromptKeys(value: unknown): PromptKeyGroup[] | undefined {
+/** 清洗 cards 字段，容忍导入/JSON 中的脏数据（string 标签自动包为 { label }）；无有效内容时返回 undefined */
+export function normalizePromptCards(value: unknown): PromptComboCard[] | undefined {
     if (!Array.isArray(value)) return undefined;
-    const keys = value
+    const cards = value
         .map((item) => {
             if (!item || typeof item !== "object") return null;
-            const key = typeof (item as PromptKeyGroup).key === "string" ? (item as PromptKeyGroup).key.trim() : "";
-            const tags = Array.isArray((item as PromptKeyGroup).tags)
-                ? (item as PromptKeyGroup).tags.filter((tag): tag is string => typeof tag === "string" && tag.trim().length > 0)
-                : [];
-            if (!key || tags.length === 0) return null;
-            return { key, tags };
+            const raw = item as PromptComboCard;
+            const name = typeof raw.name === "string" ? raw.name.trim() : "";
+            const keys = (Array.isArray(raw.keys) ? raw.keys : [])
+                .map((group) => {
+                    if (!group || typeof group !== "object") return null;
+                    const key = typeof group.key === "string" ? group.key.trim() : "";
+                    const tags = (Array.isArray(group.tags) ? (group.tags as unknown[]) : [])
+                        .map((entry): PromptComboTag | null => {
+                            if (typeof entry === "string") return entry.trim() ? { label: entry.trim() } : null;
+                            if (!entry || typeof entry !== "object") return null;
+                            const tag = entry as PromptComboTag;
+                            if (typeof tag.label !== "string" || !tag.label.trim()) return null;
+                            return {
+                                label: tag.label.trim(),
+                                ...(typeof tag.value === "string" && tag.value.trim() ? { value: tag.value } : {}),
+                                ...(tag.selected === true ? { selected: true } : {}),
+                            };
+                        })
+                        .filter((tag): tag is PromptComboTag => tag !== null);
+                    if (!key || tags.length === 0) return null;
+                    return { key, tags };
+                })
+                .filter((group): group is PromptKeyGroup => group !== null);
+            if (keys.length === 0) return null;
+            return { name, keys };
         })
-        .filter((item): item is PromptKeyGroup => item !== null);
-    return keys.length > 0 ? keys : undefined;
+        .filter((card): card is PromptComboCard => card !== null);
+    return cards.length > 0 ? cards : undefined;
 }
 
 export const usePromptStore = create<PromptStore>()(
@@ -104,7 +136,7 @@ export const usePromptStore = create<PromptStore>()(
                     ...source,
                     id: newId,
                     title: `${source.title}（副本）`,
-                    keys: source.keys?.map((k) => ({ key: k.key, tags: [...k.tags] })),
+                    cards: source.cards ? structuredClone(source.cards) : undefined,
                     createdAt: now,
                     updatedAt: now,
                 };
@@ -150,9 +182,9 @@ export const usePromptStore = create<PromptStore>()(
                 for (const item of items) {
                     const title = typeof item?.title === "string" ? item.title.trim() : "";
                     const promptText = typeof item?.prompt === "string" ? item.prompt : "";
-                    const keys = normalizePromptKeys(item?.keys);
-                    // 无标题、或既无正文也无组合键值的条目视为无效
-                    if (!title || (!promptText.trim() && !keys)) {
+                    const cards = normalizePromptCards(item?.cards);
+                    // 无标题、或既无正文也无组合卡片的条目视为无效
+                    if (!title || (!promptText.trim() && !cards)) {
                         skipped += 1;
                         continue;
                     }
@@ -168,7 +200,7 @@ export const usePromptStore = create<PromptStore>()(
                         coverUrl: typeof item.coverUrl === "string" ? item.coverUrl : "",
                         prompt: promptText,
                         tags: Array.isArray(item.tags) ? item.tags.filter((t): t is string => typeof t === "string") : [],
-                        keys,
+                        cards,
                         group: typeof item.group === "string" && item.group.trim() ? item.group.trim() : undefined,
                         color: PROMPT_COLORS.includes(item.color as PromptColor) ? (item.color as PromptColor) : undefined,
                         createdAt: typeof item.createdAt === "string" ? item.createdAt : now,

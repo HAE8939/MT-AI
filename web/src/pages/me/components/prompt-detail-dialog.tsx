@@ -49,7 +49,7 @@ export function PromptDetailDialog({
                                 {prompt.prompt.trim() ? (
                                     <p className="mb-4 whitespace-pre-wrap text-sm leading-7 text-stone-800 dark:text-stone-300">{prompt.prompt}</p>
                                 ) : null}
-                                <PromptComboBuilder prompt={prompt} onCopy={(text) => onCopy(text)} useLabel="复制组合" />
+                                <PromptComboBuilder basePrompt={prompt.prompt} cards={prompt.cards || []} onCopy={(text) => onCopy(text)} />
                             </div>
                         ) : (
                             <p className="mt-4 whitespace-pre-wrap text-sm leading-7 text-stone-800 dark:text-stone-300">{prompt.prompt}</p>

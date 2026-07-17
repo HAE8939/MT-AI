@@ -4,7 +4,7 @@ import { Button, Card, Tag } from "antd";
 
 import { formatPromptDate, type Prompt } from "@/services/api/prompts";
 import { getPromptColorMeta } from "./prompt-colors";
-import { isComboPrompt } from "./prompt-combo";
+import { isComboPrompt, countComboKeys } from "./prompt-combo";
 
 export function PromptCard({
     item,
@@ -55,7 +55,7 @@ export function PromptCard({
                     {combo ? (
                         <p className="mt-2 flex items-center gap-1 text-xs text-stone-500 dark:text-stone-400">
                             <Layers className="size-3.5" />
-                            组合式 · {item.keys?.length} 个键值组
+                            组合式 · {item.cards?.length} 张卡片 · {countComboKeys(item.cards || [])} 个键值组
                         </p>
                     ) : (
                         <p className="mt-2 line-clamp-3 text-xs leading-5 text-stone-600 dark:text-stone-400">{item.prompt}</p>

@@ -1,6 +1,7 @@
 import { create } from "zustand";
 
 import type { CanvasAgentOp, CanvasAgentSnapshot } from "@/lib/canvas/canvas-agent-ops";
+import type { PromptComboCard } from "@/stores/use-prompt-store";
 
 export type AgentChatRole = "user" | "assistant" | "system" | "tool" | "error";
 export type AgentAttachment = { id: string; name: string; type: string; size: number; url: string; dataUrl: string };
@@ -9,8 +10,11 @@ export type AgentEventLog = { id: string; time: string; title: string; text: str
 export type AgentPendingToolCall = { requestId: string; name: string; input?: { ops?: CanvasAgentOp[]; path?: string } & Record<string, unknown> };
 export type AgentCanvasContext = { snapshot: CanvasAgentSnapshot; applyOps: (ops?: CanvasAgentOp[]) => CanvasAgentSnapshot; undoOps: () => CanvasAgentSnapshot | null; canUndo: boolean };
 export type AgentThreadSummary = { id: string; preview: string; name?: string | null; cwd?: string; status?: string; source?: unknown; createdAt?: number; updatedAt?: number };
-export type AgentPanelTab = "chat" | "workflow" | "setup" | "history" | "log";
+export type AgentPanelTab = "chat" | "workflow" | "prompts" | "setup" | "history" | "log";
 export type AgentChatEngine = "model" | "codex";
+
+/** 「提示词」tab 的结构化编辑草稿（会话态，不持久化） */
+export type PromptComboDraft = { title: string; cards: PromptComboCard[]; sourceNodeId: string };
 
 const CONNECT_TIMEOUT_MS = 6000;
 let agentSource: EventSource | null = null;
@@ -45,6 +49,7 @@ type AgentStore = {
     activity: string;
     connectError: string;
     pendingTool: AgentPendingToolCall | null;
+    promptComboDraft: PromptComboDraft | null;
     setAgentState: (patch: Partial<Omit<AgentStore, "setAgentState" | "connectAgent" | "disconnectAgent" | "addMessage" | "addEventLog" | "clearEventLogs" | "openPanel" | "closePanel" | "togglePanel" | "setCanvasContext">>) => void;
     openPanel: () => void;
     closePanel: () => void;
@@ -86,6 +91,7 @@ export const useAgentStore = create<AgentStore>((set, get) => ({
     activity: "就绪",
     connectError: "",
     pendingTool: null,
+    promptComboDraft: null,
     setAgentState: (patch) => set(patch),
     openPanel: () => set({ panelOpen: true, panelMounted: true, panelClosing: false }),
     closePanel: () => {

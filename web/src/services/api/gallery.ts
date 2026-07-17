@@ -1,9 +1,9 @@
-import type { PromptColor, PromptKeyGroup } from "@/stores/use-prompt-store";
+import type { PromptColor, PromptComboCard } from "@/stores/use-prompt-store";
 
 /**
  * 灵感广场数据：public/gallery.json 为项目内置、手工维护的室内行业灵感库，
  * 按场景分类（SU转写实/室内效果图/商业空间/建筑外观/景观规划/软装与材质/视角与分镜/组合模板/专业角色），
- * 条目带空间/风格标签，组合模板类条目带键值组合 keys。
+ * 条目带空间/风格标签，组合模板类条目带组合卡片 cards。
  * 只在广场首次打开时按需加载，模块级缓存避免重复请求。
  */
 
@@ -15,8 +15,8 @@ export type GalleryItem = {
     category: string;
     /** 空间 / 风格标签 */
     tags: string[];
-    /** 组合式键值卡（组合模板分类使用） */
-    keys?: PromptKeyGroup[];
+    /** 组合卡片（组合模板分类使用） */
+    cards?: PromptComboCard[];
     /** 马卡龙卡片配色 */
     color?: PromptColor;
 };

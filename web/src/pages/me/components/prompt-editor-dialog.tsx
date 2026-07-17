@@ -4,31 +4,14 @@ import { App, AutoComplete, Button, Input, Modal, Select, Space } from "antd";
 
 import { addPrompt, updatePrompt, type Prompt } from "@/services/api/prompts";
 import { enhancePromptText } from "@/lib/prompt-enhance";
-import { normalizePromptKeys, PROMPT_COLORS, usePromptStore, type PromptColor, type PromptKeyGroup } from "@/stores/use-prompt-store";
+import { PROMPT_COLORS, usePromptStore, type PromptColor } from "@/stores/use-prompt-store";
 import { useConfigStore, useEffectiveConfig } from "@/stores/use-config-store";
 import { PROMPT_COLOR_META } from "@/components/prompts/prompt-colors";
+import { cardsToDrafts, draftsToCards, extractComboCardsFromText, type ComboCardDraft, type ComboKeyDraft } from "@/components/prompts/prompt-combo";
 
 const { TextArea } = Input;
 
 const UNGROUPED = "";
-
-/** 编辑器内使用的键值组结构，tags 用逗号/换行分隔字符串便于输入 */
-type KeyDraft = { key: string; tagsText: string };
-
-function keysToDrafts(keys?: PromptKeyGroup[]): KeyDraft[] {
-    return (keys || []).map((k) => ({ key: k.key, tagsText: k.tags.join(", ") }));
-}
-
-function draftsToKeys(drafts: KeyDraft[]): PromptKeyGroup[] | undefined {
-    const parsed = drafts.map((d) => ({
-        key: d.key.trim(),
-        tags: d.tagsText
-            .split(/[,，\n]/)
-            .map((t) => t.trim())
-            .filter(Boolean),
-    }));
-    return normalizePromptKeys(parsed);
-}
 
 export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; prompt: Prompt | null; onClose: () => void }) {
     const { message } = App.useApp();
@@ -39,7 +22,9 @@ export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; p
     const [coverUrl, setCoverUrl] = useState("");
     const [group, setGroup] = useState<string>(UNGROUPED);
     const [color, setColor] = useState<PromptColor | undefined>(undefined);
-    const [keyDrafts, setKeyDrafts] = useState<KeyDraft[]>([]);
+    const [cardDrafts, setCardDrafts] = useState<ComboCardDraft[]>([]);
+    const [importOpen, setImportOpen] = useState(false);
+    const [importText, setImportText] = useState("");
     const [enhancing, setEnhancing] = useState(false);
     const [enhanceBackup, setEnhanceBackup] = useState<string | null>(null);
     const enhanceAbortRef = useRef<AbortController | null>(null);
@@ -64,7 +49,7 @@ export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; p
             setCoverUrl(prompt?.coverUrl || "");
             setGroup(prompt?.group || UNGROUPED);
             setColor(prompt?.color);
-            setKeyDrafts(keysToDrafts(prompt?.keys));
+            setCardDrafts(cardsToDrafts(prompt?.cards));
             setEnhanceBackup(null);
         } else {
             enhanceAbortRef.current?.abort();
@@ -105,20 +90,38 @@ export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; p
         setEnhanceBackup(null);
     };
 
-    const addKeyDraft = () => setKeyDrafts((prev) => [...prev, { key: "", tagsText: "" }]);
-    const updateKeyDraft = (index: number, patch: Partial<KeyDraft>) => setKeyDrafts((prev) => prev.map((d, i) => (i === index ? { ...d, ...patch } : d)));
-    const removeKeyDraft = (index: number) => setKeyDrafts((prev) => prev.filter((_, i) => i !== index));
+    const addCardDraft = () => setCardDrafts((prev) => [...prev, { name: "", keys: [{ key: "", tagsText: "" }] }]);
+    const updateCardDraft = (index: number, patch: Partial<ComboCardDraft>) => setCardDrafts((prev) => prev.map((c, i) => (i === index ? { ...c, ...patch } : c)));
+    const removeCardDraft = (index: number) => setCardDrafts((prev) => prev.filter((_, i) => i !== index));
+    const addKeyDraft = (cardIndex: number) =>
+        setCardDrafts((prev) => prev.map((c, i) => (i === cardIndex ? { ...c, keys: [...c.keys, { key: "", tagsText: "" }] } : c)));
+    const updateKeyDraft = (cardIndex: number, keyIndex: number, patch: Partial<ComboKeyDraft>) =>
+        setCardDrafts((prev) => prev.map((c, i) => (i === cardIndex ? { ...c, keys: c.keys.map((k, ki) => (ki === keyIndex ? { ...k, ...patch } : k)) } : c)));
+    const removeKeyDraft = (cardIndex: number, keyIndex: number) =>
+        setCardDrafts((prev) => prev.map((c, i) => (i === cardIndex ? { ...c, keys: c.keys.filter((_, ki) => ki !== keyIndex) } : c)));
+
+    const handleImportJson = () => {
+        const cards = extractComboCardsFromText(importText);
+        if (!cards) {
+            message.error("未能从文本中解析出 JSON 提示词");
+            return;
+        }
+        setCardDrafts((prev) => [...prev, ...cardsToDrafts(cards)]);
+        setImportOpen(false);
+        setImportText("");
+        message.success(`已导入 ${cards.length} 张卡片`);
+    };
 
     const handleSave = () => {
-        const keys = draftsToKeys(keyDrafts);
-        // 组合式卡片正文可空，只要有 keys；否则要求正文
-        if (!title.trim() || (!promptText.trim() && !keys)) return;
+        const cards = draftsToCards(cardDrafts);
+        // 组合式卡片正文可空，只要有 cards；否则要求正文
+        if (!title.trim() || (!promptText.trim() && !cards)) return;
         const payload = {
             title: title.trim(),
             prompt: promptText.trim(),
             tags: tagsInput,
             coverUrl,
-            keys,
+            cards,
             group: group.trim() || undefined,
             color,
         };
@@ -139,7 +142,7 @@ export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; p
                 </div>
                 <div>
                     <div className="mb-1 flex items-center justify-between gap-2">
-                        <label className="block text-sm font-medium text-stone-700 dark:text-stone-300">提示词内容{keyDrafts.length > 0 ? "（组合式卡片可留空，作为前置说明）" : ""}</label>
+                        <label className="block text-sm font-medium text-stone-700 dark:text-stone-300">提示词内容{cardDrafts.length > 0 ? "（组合式卡片可留空，作为前置说明）" : ""}</label>
                         <Space size={4}>
                             {enhanceBackup !== null && !enhancing ? (
                                 <Button size="small" type="text" onClick={restoreEnhanceBackup}>
@@ -197,29 +200,60 @@ export function PromptEditorDialog({ open, prompt, onClose }: { open: boolean; p
 
                 <div className="rounded-lg border border-stone-200 p-3 dark:border-stone-700">
                     <div className="mb-2 flex items-center justify-between">
-                        <span className="text-sm font-medium text-stone-700 dark:text-stone-300">键值标签组（组合式卡片）</span>
-                        <Button size="small" icon={<Plus className="size-3.5" />} onClick={addKeyDraft}>
-                            添加键
-                        </Button>
+                        <span className="text-sm font-medium text-stone-700 dark:text-stone-300">组合卡片（组合式提示词）</span>
+                        <Space size={4}>
+                            <Button size="small" onClick={() => setImportOpen(true)}>
+                                从 JSON 导入
+                            </Button>
+                            <Button size="small" icon={<Plus className="size-3.5" />} onClick={addCardDraft}>
+                                添加卡片
+                            </Button>
+                        </Space>
                     </div>
-                    <p className="mb-3 text-xs text-stone-500 dark:text-stone-400">填写后卡片会渲染为可勾选的键值组合构建器，勾选实时组合成 JSON 提示词。留空则为普通文本卡片。</p>
-                    {keyDrafts.length === 0 ? (
-                        <div className="text-xs text-stone-400 dark:text-stone-500">暂无键值组</div>
+                    <p className="mb-3 text-xs text-stone-500 dark:text-stone-400">
+                        卡片名作为组合 JSON 的一级键（留空则键值平铺顶层）。候选值每行一个标签：标签名 或 标签名=实际值，行首 * 表示默认勾选。留空则为普通文本卡片。
+                    </p>
+                    {cardDrafts.length === 0 ? (
+                        <div className="text-xs text-stone-400 dark:text-stone-500">暂无组合卡片</div>
                     ) : (
-                        <div className="space-y-3">
-                            {keyDrafts.map((draft, index) => (
-                                <div key={index} className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)_auto] sm:items-start">
-                                    <Input value={draft.key} onChange={(e) => updateKeyDraft(index, { key: e.target.value })} placeholder="键名，如 风格" />
-                                    <TextArea value={draft.tagsText} onChange={(e) => updateKeyDraft(index, { tagsText: e.target.value })} placeholder="候选值，逗号或换行分隔，如 现代简约, 工业风" autoSize={{ minRows: 1, maxRows: 4 }} />
-                                    <Space.Compact>
-                                        <Button danger size="small" icon={<Trash2 className="size-3.5" />} onClick={() => removeKeyDraft(index)} />
-                                    </Space.Compact>
+                        <div className="space-y-4">
+                            {cardDrafts.map((card, cardIndex) => (
+                                <div key={cardIndex} className="rounded-lg border border-stone-200 p-3 dark:border-stone-700">
+                                    <div className="mb-2 flex items-center gap-2">
+                                        <Input value={card.name} onChange={(e) => updateCardDraft(cardIndex, { name: e.target.value })} placeholder="卡片名，如 场景与光效（可留空）" />
+                                        <Button size="small" icon={<Plus className="size-3.5" />} onClick={() => addKeyDraft(cardIndex)}>
+                                            添加键值组
+                                        </Button>
+                                        <Button danger size="small" icon={<Trash2 className="size-3.5" />} onClick={() => removeCardDraft(cardIndex)} />
+                                    </div>
+                                    <div className="space-y-2">
+                                        {card.keys.map((draft, keyIndex) => (
+                                            <div key={keyIndex} className="grid gap-2 sm:grid-cols-[160px_minmax(0,1fr)_auto] sm:items-start">
+                                                <Input value={draft.key} onChange={(e) => updateKeyDraft(cardIndex, keyIndex, { key: e.target.value })} placeholder="键名，如 风格" />
+                                                <TextArea
+                                                    value={draft.tagsText}
+                                                    onChange={(e) => updateKeyDraft(cardIndex, keyIndex, { tagsText: e.target.value })}
+                                                    placeholder={"每行一个标签：标签名 或 标签名=实际值，行首 * 表示默认勾选"}
+                                                    autoSize={{ minRows: 1, maxRows: 6 }}
+                                                />
+                                                <Button danger size="small" icon={<Trash2 className="size-3.5" />} onClick={() => removeKeyDraft(cardIndex, keyIndex)} />
+                                            </div>
+                                        ))}
+                                    </div>
                                 </div>
                             ))}
                         </div>
                     )}
                 </div>
             </div>
+            <Modal title="从 JSON 导入组合卡片" open={importOpen} onCancel={() => setImportOpen(false)} onOk={handleImportJson} okText="导入" cancelText="取消" width={560} centered>
+                <TextArea
+                    value={importText}
+                    onChange={(e) => setImportText(e.target.value)}
+                    placeholder={'粘贴任意 JSON 提示词（支持 ``` 代码块与前后说明文字），如 {"场景": {"时间": "清晨/黄昏"}}'}
+                    autoSize={{ minRows: 8, maxRows: 16 }}
+                />
+            </Modal>
         </Modal>
     );
 }

@@ -22,7 +22,7 @@ function toPrompt(item: GalleryItem): Prompt {
         coverUrl: "",
         prompt: item.prompt,
         tags: item.tags,
-        keys: item.keys,
+        cards: item.cards,
         color: item.color,
         createdAt: "",
         updatedAt: "",
@@ -81,7 +81,7 @@ export default function PlazaPage() {
         changeFilter(() => setSelectedTags((items) => (items.includes(tag) ? items.filter((item) => item !== tag) : [...items, tag])));
 
     const copyItem = (item: GalleryItem) =>
-        copyText(getPromptText(toPrompt(item)), item.keys?.length ? "组合提示词已复制，请到画布中粘贴使用" : "提示词已复制，请到画布中粘贴使用");
+        copyText(getPromptText(toPrompt(item)), item.cards?.length ? "组合提示词已复制，请到画布中粘贴使用" : "提示词已复制，请到画布中粘贴使用");
 
     const saveToFavorites = (item: GalleryItem) => {
         const now = new Date().toISOString();
@@ -215,7 +215,7 @@ export default function PlazaPage() {
                         {isComboPrompt(detailPrompt) ? (
                             <div>
                                 {detail.prompt.trim() ? <p className="mb-3 whitespace-pre-wrap text-sm leading-6 text-stone-700 dark:text-stone-300">{detail.prompt}</p> : null}
-                                <PromptComboBuilder prompt={detailPrompt} onCopy={(text) => copyText(text, "组合提示词已复制，请到画布中粘贴使用")} useLabel="复制组合" />
+                                <PromptComboBuilder basePrompt={detail.prompt} cards={detailPrompt.cards || []} onCopy={(text) => copyText(text, "组合提示词已复制，请到画布中粘贴使用")} />
                             </div>
                         ) : (
                             <pre className="whitespace-pre-wrap rounded-lg bg-stone-50 p-3 font-sans text-xs leading-5 text-stone-700 dark:bg-stone-900 dark:text-stone-300">{detail.prompt}</pre>

@@ -1,7 +1,7 @@
-import { normalizePromptKeys, PROMPT_COLORS, type Prompt, type PromptColor } from "@/stores/use-prompt-store";
+import { normalizePromptCards, PROMPT_COLORS, type Prompt, type PromptColor } from "@/stores/use-prompt-store";
 
-/** 导出文件格式版本，便于未来无损往返升级 */
-export const PROMPT_EXPORT_VERSION = 1;
+/** 导出文件格式版本，便于未来无损往返升级；v2 起组合字段为 cards（卡片层级） */
+export const PROMPT_EXPORT_VERSION = 2;
 
 export type PromptExportFile = {
     version: number;
@@ -21,7 +21,7 @@ function toExportPrompt(p: Prompt): Partial<Prompt> {
         createdAt: p.createdAt,
         updatedAt: p.updatedAt,
     };
-    if (p.keys?.length) item.keys = p.keys;
+    if (p.cards?.length) item.cards = p.cards;
     if (p.group) item.group = p.group;
     if (p.color) item.color = p.color;
     return item;
@@ -69,7 +69,7 @@ export function parseImportJson(text: string): ParsedImport {
                 prompt: typeof item.prompt === "string" ? item.prompt : "",
                 coverUrl: typeof item.coverUrl === "string" ? item.coverUrl : "",
                 tags: Array.isArray(item.tags) ? (item.tags.filter((t) => typeof t === "string") as string[]) : [],
-                keys: normalizePromptKeys(item.keys),
+                cards: normalizePromptCards(item.cards),
                 group: typeof item.group === "string" && item.group.trim() ? item.group.trim() : undefined,
                 color: PROMPT_COLORS.includes(item.color as PromptColor) ? (item.color as PromptColor) : undefined,
                 createdAt: typeof item.createdAt === "string" ? item.createdAt : undefined,

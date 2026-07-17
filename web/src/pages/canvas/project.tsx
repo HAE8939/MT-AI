@@ -50,6 +50,7 @@ import { CanvasNodePromptPanel, type CanvasNodeGenerationMode } from "@/componen
 import { CanvasToolbar } from "@/components/canvas/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
+import { extractComboCardsFromText } from "@/components/prompts/prompt-combo";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useWorkflowTaskStore } from "@/stores/use-workflow-task-store";
@@ -1901,6 +1902,21 @@ function InfiniteCanvasPage() {
         [effectiveConfig.model, effectiveConfig.textModel, message],
     );
 
+    /** 文本节点（智能体分析结果等）→ 侧栏「提示词」tab 结构化微调 */
+    const openStructuredEdit = useCallback(
+        (node: CanvasNodeData) => {
+            const cards = extractComboCardsFromText(node.metadata?.content || "");
+            if (!cards) {
+                message.warning("未能从节点内容中解析出 JSON 键值");
+                return;
+            }
+            const store = useAgentStore.getState();
+            store.setAgentState({ promptComboDraft: { title: node.title || "结构化编辑", cards, sourceNodeId: node.id }, activeTab: "prompts" });
+            store.openPanel();
+        },
+        [message],
+    );
+
     const cropImageNode = useCallback(async (node: CanvasNodeData, crop: CanvasImageCropRect) => {
         if (!node.metadata?.content) return;
         const cropped = await cropDataUrl(node.metadata.content, crop);
@@ -3158,6 +3174,7 @@ function InfiniteCanvasPage() {
                     onAnnotate={(node) => setAnnotateNodeId(node.id)}
                     onViewImage={(node) => setPreviewNodeId(node.id)}
                     onReversePrompt={createImageReversePromptNodes}
+                    onStructuredEdit={openStructuredEdit}
                     onRetry={(node) => void handleRetryNode(node)}
                     onToggleFreeResize={(node) => toggleNodeFreeResize(node.id)}
                     onDelete={(node) => deleteNodes(new Set([node.id]))}

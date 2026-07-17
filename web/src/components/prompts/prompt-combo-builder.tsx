@@ -3,69 +3,79 @@ import { useEffect, useMemo, useState } from "react";
 import { Button, Tag } from "antd";
 
 import { cn } from "@/lib/utils";
-import type { Prompt } from "@/stores/use-prompt-store";
-import { buildComboText, defaultComboSelection } from "./prompt-combo";
+import type { PromptComboCard } from "@/stores/use-prompt-store";
+import { buildComboText, cloneComboCards } from "./prompt-combo";
 
 /**
- * 组合式卡片构建器：每个 key 下渲染多个可勾选 tag，
- * 勾选实时组合成 JSON 提示词，含 JSON 预览、复制与填充（onUse）。
+ * 卡片层级组合器：内部持有 cards 深拷贝，点选标签切换 selected，
+ * 实时组合成 JSON 提示词，含 JSON 预览、复制与填充（onUse）。
  */
 export function PromptComboBuilder({
-    prompt,
+    basePrompt = "",
+    cards,
     onCopy,
     onUse,
     useLabel = "使用此提示词",
 }: {
-    prompt: Prompt;
+    basePrompt?: string;
+    cards: PromptComboCard[];
     onCopy?: (text: string) => void;
     onUse?: (text: string) => void;
     useLabel?: string;
 }) {
-    const [selection, setSelection] = useState<Record<string, string[]>>(() => defaultComboSelection(prompt));
+    const [cardsState, setCardsState] = useState<PromptComboCard[]>(() => cloneComboCards(cards));
 
     useEffect(() => {
-        setSelection(defaultComboSelection(prompt));
-    }, [prompt]);
+        setCardsState(cloneComboCards(cards));
+    }, [cards]);
 
-    const composed = useMemo(() => buildComboText(prompt, selection), [prompt, selection]);
+    const composed = useMemo(() => buildComboText(basePrompt, cardsState), [basePrompt, cardsState]);
 
-    const toggleTag = (key: string, tag: string) => {
-        setSelection((prev) => {
-            const current = prev[key] || [];
-            const next = current.includes(tag) ? current.filter((t) => t !== tag) : [...current, tag];
-            return { ...prev, [key]: next };
-        });
+    const toggleTag = (cardIndex: number, keyIndex: number, tagIndex: number) => {
+        setCardsState((prev) =>
+            prev.map((card, ci) =>
+                ci !== cardIndex
+                    ? card
+                    : {
+                          ...card,
+                          keys: card.keys.map((group, ki) =>
+                              ki !== keyIndex
+                                  ? group
+                                  : { ...group, tags: group.tags.map((tag, ti) => (ti !== tagIndex ? tag : { ...tag, selected: !tag.selected })) },
+                          ),
+                      },
+            ),
+        );
     };
 
     return (
         <div className="space-y-4">
-            {prompt.keys?.map((group) => {
-                const selected = selection[group.key] || [];
-                return (
-                    <div key={group.key}>
-                        <div className="mb-1.5 text-xs font-medium text-stone-500 dark:text-stone-400">{group.key}</div>
-                        <div className="flex flex-wrap gap-2">
-                            {group.tags.map((tag) => {
-                                const active = selected.includes(tag);
-                                return (
+            {cardsState.map((card, cardIndex) => (
+                <div key={cardIndex} className="space-y-3">
+                    {card.name.trim() ? <div className="text-sm font-semibold text-stone-700 dark:text-stone-200">{card.name}</div> : null}
+                    {card.keys.map((group, keyIndex) => (
+                        <div key={keyIndex}>
+                            <div className="mb-1.5 text-xs font-medium text-stone-500 dark:text-stone-400">{group.key}</div>
+                            <div className="flex flex-wrap gap-2">
+                                {group.tags.map((tag, tagIndex) => (
                                     <Tag.CheckableTag
-                                        key={tag}
-                                        checked={active}
-                                        className={cn("prompt-filter-tag", active && "is-active")}
-                                        onChange={() => toggleTag(group.key, tag)}
+                                        key={tagIndex}
+                                        checked={Boolean(tag.selected)}
+                                        className={cn("prompt-filter-tag", tag.selected && "is-active")}
+                                        onChange={() => toggleTag(cardIndex, keyIndex, tagIndex)}
                                     >
-                                        {tag}
+                                        <span title={tag.value && tag.value !== tag.label ? tag.value : undefined}>{tag.label}</span>
                                     </Tag.CheckableTag>
-                                );
-                            })}
+                                ))}
+                            </div>
                         </div>
-                    </div>
-                );
-            })}
+                    ))}
+                </div>
+            ))}
 
             <div>
                 <div className="mb-1.5 text-xs font-medium text-stone-500 dark:text-stone-400">JSON 预览</div>
-                <pre className="thin-scrollbar max-h-64 overflow-auto rounded-lg bg-stone-100 p-3 text-xs leading-5 text-stone-700 dark:bg-stone-800 dark:text-stone-300">
+                <pre className="thin-scrollbar max-h-64 overflow-auto rounded-lg bg-stone-100 p-3 text-xs leading-5 whitespace-pre-wrap text-stone-700 dark:bg-stone-800 dark:text-stone-300">
                     {composed || "（未勾选任何标签）"}
                 </pre>
             </div>

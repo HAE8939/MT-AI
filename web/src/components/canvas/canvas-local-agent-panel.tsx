@@ -13,6 +13,7 @@ import { isSiteTool, runSiteTool, SITE_TOOL_LABELS } from "@/lib/agent/agent-sit
 import { AgentChatComposer, AgentChatMessage, AgentPanelTabs, AgentPendingToolCard, AgentWorkingMessage, type CanvasAgentChatAttachment } from "./canvas-agent-chat-ui";
 import { CanvasModelChatView, ChatHistoryView } from "./canvas-model-chat-view";
 import { CanvasWorkflowTab } from "./canvas-workflow-tab";
+import { CanvasPromptTab } from "./canvas-prompt-tab";
 
 const MAX_ATTACHMENTS = 6;
 const MAX_ATTACHMENT_PAYLOAD_BYTES = 28 * 1024 * 1024;
@@ -499,6 +500,7 @@ export function CanvasLocalAgentPanel({ embedded, headless, autoConnect }: { emb
                 items={[
                     { value: "chat", label: "对话" },
                     { value: "workflow", label: "工作流" },
+                    { value: "prompts", label: "提示词" },
                     { value: "history", label: "历史" },
                     { value: "log", label: "日志", icon: <Terminal className="size-3.5" />, count: eventLogs.length },
                     { value: "setup", label: "连接", icon: <PlugZap className="size-3.5" /> },
@@ -564,6 +566,8 @@ export function CanvasLocalAgentPanel({ embedded, headless, autoConnect }: { emb
                 </>
             ) : activeTab === "workflow" ? (
                 <CanvasWorkflowTab theme={theme} />
+            ) : activeTab === "prompts" ? (
+                <CanvasPromptTab theme={theme} />
             ) : activeTab === "history" ? (
                 <ChatHistoryView theme={theme} />
             ) : activeTab === "log" ? (
