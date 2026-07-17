@@ -22,8 +22,8 @@
 
 ## 第三方数据与内容
 
-- **灵感画廊提示词数据**（`web/public/gallery.json`、`web/public/prompts.json` 中 `nbp-` 前缀条目）与**提示词增强系统提示词**（`web/src/lib/prompt-enhance.ts`）来自 [NanoBanana Trending Prompts](https://github.com/jau123/nanobanana-trending-prompts) 项目，© [MeiGen.ai](https://meigen.ai)，采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 许可。本项目对数据做了格式转换（字段映射、标题生成、分类中文化），提示词增强系统提示词做了轻微改编。数据由 `web/scripts/build-gallery.mjs` 生成，可随上游更新重建。
-- 灵感画廊条目的封面图片托管在 `images.meigen.ai`，由浏览器直接加载，本项目不做镜像与再分发。
+- **提示词增强系统提示词**（`web/src/lib/prompt-enhance.ts`）改编自 [NanoBanana Trending Prompts](https://github.com/jau123/nanobanana-trending-prompts) 项目，© [MeiGen.ai](https://meigen.ai)，采用 [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/) 许可。
+- 灵感广场数据（`web/public/gallery.json`）为本项目自建的室内行业提示词库，不含第三方再分发内容。
 
 ## 许可证
 
