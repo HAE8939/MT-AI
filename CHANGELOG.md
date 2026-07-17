@@ -2,6 +2,7 @@
 
 ## Unreleased
 
++ [新增] 画布侧栏「工作流」tab 升级为 RunningHub 式运行面板：点云工作流卡片在侧栏内直接进入运行视图（图片缩略图 + 数值步进器 + 底部「立即运行」），图片支持选画布节点（选中节点自动预填）与本地文件上传（≤30MB，提交时经 v2 接口上传），提交后停留视图可迭代重跑，状态条实时跟踪，结果照旧写回画布占位节点；参数类型新增「数值」，登记弹窗与运行弹窗同步支持。运行核心逻辑抽为 useRunningHubRun hook，弹窗与侧栏共用。
 + [调整] RunningHub 接口迁移 OpenAPI v2：提交改为 `POST /openapi/v2/run/workflow/{workflowId}`、查询改为 `POST /openapi/v2/query`（状态语义 QUEUED/RUNNING/SUCCESS/FAILED，结果取 `results[].url`）、上传改为 `POST /openapi/v2/media/upload/binary`，鉴权统一从请求体 apiKey 改为 `Authorization: Bearer` 请求头；HTTP 错误会解析响应体中的 errorMessage 展示真实原因。
 + [新增] 预置内置云工作流模板「Z Image 亿级像素文生图」（workflowId 1997246493079834625）作为 v2 链路验证用例：参数留空按工作流默认提示词出图，自定义参数需导出 API JSON 后重新登记。
 + [调整] RunningHub 默认地址因 CN 站政策变动切换为国际站 www.runninghub.ai：新默认值、配置页占位符与执行器兜底同步更新，历史配置中保存的旧 CN 默认地址在启动时自动迁移（手动改过的自定义地址不受影响）。
