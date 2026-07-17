@@ -51,6 +51,9 @@ import { CanvasToolbar } from "@/components/canvas/canvas-toolbar";
 import { AssetPickerModal, type InsertAssetPayload } from "@/components/canvas/asset-picker-modal";
 import { CanvasZoomControls } from "@/components/canvas/canvas-zoom-controls";
 import { extractComboCardsFromText } from "@/components/prompts/prompt-combo";
+import { SaveLocalWorkflowDialog, type SaveLocalWorkflowPayload } from "@/components/workflow/save-local-workflow-dialog";
+import { detectInputSlots, isConfigStepNode, topoSortStepNodes } from "@/lib/canvas/local-workflow";
+import type { LocalWorkflowInputSlot } from "@/types/workflow";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { useWorkflowTaskStore } from "@/stores/use-workflow-task-store";
@@ -2346,6 +2349,81 @@ function InfiniteCanvasPage() {
         message.success("已保存为工作流模板，可在「工作流」页或面板「工作流」标签中运行");
     }, [message, selectedNodeIds]);
 
+    /** 从当前选区构建去运行态的快照（图片/视频内容留空当输入槽，保留生成参数） */
+    const buildTemplateSnapshot = useCallback(() => {
+        const selectedIds = new Set(selectedNodeIds);
+        const selected = nodesRef.current.filter((node) => selectedIds.has(node.id));
+        const innerConnections = connectionsRef.current.filter((connection) => selectedIds.has(connection.fromNodeId) && selectedIds.has(connection.toNodeId));
+        const minX = selected.length ? Math.min(...selected.map((node) => node.position.x)) : 0;
+        const minY = selected.length ? Math.min(...selected.map((node) => node.position.y)) : 0;
+        const templateNodes = selected.map((node) => ({
+            ...node,
+            position: { x: node.position.x - minX, y: node.position.y - minY },
+            metadata: node.metadata
+                ? {
+                      ...node.metadata,
+                      content: node.type === CanvasNodeType.Text ? node.metadata.content : undefined,
+                      composerContent: node.metadata.composerContent,
+                      status: undefined,
+                      errorDetails: undefined,
+                      storageKey: undefined,
+                      workflowTaskId: undefined,
+                      batchChildIds: undefined,
+                      batchRootId: undefined,
+                  }
+                : undefined,
+        }));
+        return { templateNodes, innerConnections };
+    }, [selectedNodeIds]);
+
+    const [saveWorkflowState, setSaveWorkflowState] = useState<{ open: boolean; nodes: CanvasNodeData[]; connections: CanvasConnection[]; inputs: LocalWorkflowInputSlot[]; stepCount: number }>({ open: false, nodes: [], connections: [], inputs: [], stepCount: 0 });
+
+    const saveSelectionAsLocalWorkflow = useCallback(() => {
+        const { templateNodes, innerConnections } = buildTemplateSnapshot();
+        if (!templateNodes.length) {
+            message.warning("请先选择要保存的节点");
+            return;
+        }
+        const stepCount = templateNodes.filter(isConfigStepNode).length;
+        if (!stepCount) {
+            message.warning("所选节点里没有生成步骤，无法保存为可串跑的本地工作流");
+            return;
+        }
+        try {
+            topoSortStepNodes(templateNodes, innerConnections);
+        } catch (error) {
+            message.error(error instanceof Error ? error.message : "工作流依赖有误");
+            return;
+        }
+        const inputs = detectInputSlots(templateNodes, innerConnections);
+        setSaveWorkflowState({ open: true, nodes: templateNodes, connections: innerConnections, inputs, stepCount });
+    }, [buildTemplateSnapshot, message]);
+
+    const confirmSaveLocalWorkflow = useCallback(
+        (payload: SaveLocalWorkflowPayload) => {
+            useAgentTemplateStore.getState().addTemplate({
+                name: payload.name,
+                description: payload.description || `${saveWorkflowState.stepCount} 个生成步骤 · 本地串跑`,
+                category: "image",
+                spec: { kind: "local-workflow", nodes: saveWorkflowState.nodes, connections: saveWorkflowState.connections, inputs: payload.inputs },
+            });
+            setSaveWorkflowState((current) => ({ ...current, open: false }));
+            message.success("已保存为本地工作流，可在「工作流」页或面板「工作流」标签中运行");
+        },
+        [message, saveWorkflowState.nodes, saveWorkflowState.connections, saveWorkflowState.stepCount],
+    );
+
+    const handleSaveButton = useCallback(() => {
+        modal.confirm({
+            title: "保存所选节点",
+            content: "选择保存方式：画布模板（插入即用、手动跑）或本地工作流（填输入槽、一键串跑）。",
+            okText: "本地工作流",
+            cancelText: "画布模板",
+            onOk: saveSelectionAsLocalWorkflow,
+            onCancel: saveSelectionAsAgent,
+        });
+    }, [modal, saveSelectionAsLocalWorkflow, saveSelectionAsAgent]);
+
     const handleUploadRequest = useCallback((nodeId?: string, position?: Position) => {
         uploadTargetRef.current = { nodeId, position };
         imageInputRef.current?.click();
@@ -3229,7 +3307,7 @@ function InfiniteCanvasPage() {
                     onGridMerge={() => setGridMergeOpen(true)}
                     onArrange={arrangeCanvasImages}
                     onRunRole={() => setRoleWorkflowOpen(true)}
-                    onSaveAgent={saveSelectionAsAgent}
+                    onSaveAgent={handleSaveButton}
                     onClear={() => setClearConfirmOpen(true)}
                     onDeselect={deselectCanvas}
                     onBackgroundModeChange={setBackgroundMode}
@@ -3352,6 +3430,13 @@ function InfiniteCanvasPage() {
                 </Modal>
 
                 <AssetPickerModal open={assetPickerOpen} onInsert={handleAssetInsert} onClose={() => setAssetPickerOpen(false)} />
+                <SaveLocalWorkflowDialog
+                    open={saveWorkflowState.open}
+                    defaultInputs={saveWorkflowState.inputs}
+                    stepCount={saveWorkflowState.stepCount}
+                    onCancel={() => setSaveWorkflowState((current) => ({ ...current, open: false }))}
+                    onSave={confirmSaveLocalWorkflow}
+                />
             </section>
         </main>
     );
