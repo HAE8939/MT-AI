@@ -1,5 +1,5 @@
 {
-  "name": "@hae8939/mt-ai-agent",
+  "name": "@basketikun/canvas-agent",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",

@@ -62,7 +62,7 @@ bun run build      # 生产构建，输出 web/dist
 ### 连接 Codex（可选）
 
 - Windows：运行 `setup-codex.bat` 一键安装 Codex 插件，或 `start-agent.bat` 直接启动本地 Agent 后在网页连接；`start-all.bat` 可同时拉起本地 Agent 与网页服务并自动打开浏览器。
-- 直接运行 `npx -y @hae8939/mt-ai-agent` 不会安装 MCP、不增加 Codex token 消耗；只有安装插件或手动 `codex mcp add` 后工具才进入 Codex 上下文。
+- 直接运行 `npx -y @basketikun/canvas-agent` 不会安装 MCP、不增加 Codex token 消耗；只有安装插件或手动 `codex mcp add` 后工具才进入 Codex 上下文。
 
 ## New API 自动配置
 
