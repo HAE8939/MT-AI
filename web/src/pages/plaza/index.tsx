@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { App, Button, Empty, Input, Modal, Pagination, Spin, Tag } from "antd";
-import { BookmarkPlus, ExternalLink, Search } from "lucide-react";
+import { BookmarkPlus, Search } from "lucide-react";
 
 import { PromptCard } from "@/components/prompts/prompt-card";
+import { PromptComboBuilder } from "@/components/prompts/prompt-combo-builder";
+import { getPromptText, isComboPrompt } from "@/components/prompts/prompt-combo";
 import { useCopyText } from "@/hooks/use-copy-text";
 import { cn } from "@/lib/utils";
 import { loadGallery, type GalleryData, type GalleryItem } from "@/services/api/gallery";
@@ -10,24 +12,22 @@ import { GALLERY_GROUP, usePromptStore } from "@/stores/use-prompt-store";
 import type { Prompt } from "@/services/api/prompts";
 
 const GALLERY_PAGE_SIZE = 24;
-const ALL_CATEGORY = "全部";
+const ALL_OPTION = "全部";
 
+/** 广场条目转提示词卡片；卡片展示用空日期（不显示日期），收藏时再补真实时间 */
 function toPrompt(item: GalleryItem): Prompt {
-    const iso = item.date ? `${item.date}T00:00:00.000Z` : new Date().toISOString();
     return {
         id: item.id,
         title: item.title,
-        coverUrl: item.coverUrl,
+        coverUrl: "",
         prompt: item.prompt,
         tags: item.tags,
-        createdAt: iso,
-        updatedAt: iso,
+        keys: item.keys,
+        color: item.color,
+        createdAt: "",
+        updatedAt: "",
         group: GALLERY_GROUP,
     };
-}
-
-function formatCount(value: number) {
-    return value >= 10000 ? `${(value / 10000).toFixed(1)}w` : value.toLocaleString();
 }
 
 /** 灵感广场：只读公共内容源，条目只有「复制提示词」和「收藏」两个动作，收藏落入「我的→收藏」 */
@@ -37,7 +37,8 @@ export default function PlazaPage() {
     const [data, setData] = useState<GalleryData | null>(null);
     const [loadError, setLoadError] = useState("");
     const [keyword, setKeyword] = useState("");
-    const [category, setCategory] = useState(ALL_CATEGORY);
+    const [category, setCategory] = useState(ALL_OPTION);
+    const [selectedTags, setSelectedTags] = useState<string[]>([]);
     const [page, setPage] = useState(1);
     const [detail, setDetail] = useState<GalleryItem | null>(null);
 
@@ -53,15 +54,21 @@ export default function PlazaPage() {
             .catch((error) => setLoadError(error instanceof Error ? error.message : "加载灵感广场失败"));
     }, [data]);
 
-    const filtered = useMemo(() => {
+    const categoryItems = useMemo(() => {
         if (!data) return [];
+        return category === ALL_OPTION ? data.items : data.items.filter((item) => item.category === category);
+    }, [data, category]);
+
+    const tagOptions = useMemo(() => Array.from(new Set(categoryItems.flatMap((item) => item.tags))), [categoryItems]);
+
+    const filtered = useMemo(() => {
         const kw = keyword.trim().toLowerCase();
-        return data.items.filter((item) => {
-            if (category !== ALL_CATEGORY && !item.tags.includes(category)) return false;
+        return categoryItems.filter((item) => {
+            if (selectedTags.length && !selectedTags.some((tag) => item.tags.includes(tag))) return false;
             if (!kw) return true;
             return [item.title, item.prompt, ...item.tags].join(" ").toLowerCase().includes(kw);
         });
-    }, [data, keyword, category]);
+    }, [categoryItems, selectedTags, keyword]);
 
     const pageItems = useMemo(() => filtered.slice((page - 1) * GALLERY_PAGE_SIZE, page * GALLERY_PAGE_SIZE), [filtered, page]);
 
@@ -70,33 +77,64 @@ export default function PlazaPage() {
         setPage(1);
     };
 
+    const toggleTag = (tag: string) =>
+        changeFilter(() => setSelectedTags((items) => (items.includes(tag) ? items.filter((item) => item !== tag) : [...items, tag])));
+
+    const copyItem = (item: GalleryItem) =>
+        copyText(getPromptText(toPrompt(item)), item.keys?.length ? "组合提示词已复制，请到画布中粘贴使用" : "提示词已复制，请到画布中粘贴使用");
+
     const saveToFavorites = (item: GalleryItem) => {
-        const { added } = importPrompts([toPrompt(item)]);
+        const now = new Date().toISOString();
+        const { added } = importPrompts([{ ...toPrompt(item), createdAt: now, updatedAt: now }]);
         if (added > 0) message.success(`「${item.title}」已收藏，可在「我的」中查看`);
-        else message.info("该条目已收藏过（或与已隐藏的内置条目重复）");
+        else message.info("该条目已收藏过");
     };
 
-    const categoryTabs = [ALL_CATEGORY, ...(data?.categories || [])];
+    const categoryTabs = [ALL_OPTION, ...(data?.categories || [])];
+    const detailPrompt = detail ? toPrompt(detail) : null;
 
     return (
         <div className="flex h-full flex-col overflow-hidden bg-background text-stone-800 dark:text-stone-100">
             <main className="min-h-0 flex-1 overflow-y-auto bg-background bg-[radial-gradient(#e5e7eb_1px,transparent_1px)] px-6 py-8 [background-size:16px_16px] dark:bg-[radial-gradient(rgba(245,245,244,.16)_1px,transparent_1px)]">
                 <div className="mx-auto max-w-5xl text-center">
                     <h1 className="text-4xl font-semibold tracking-tight text-stone-950 dark:text-stone-100">灵感广场</h1>
-                    <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">浏览热门提示词灵感，复制到画布使用，或收藏到「我的」。</p>
+                    <p className="mt-3 text-sm text-stone-500 dark:text-stone-400">浏览室内行业提示词灵感，复制到画布使用，或收藏到「我的」。</p>
                 </div>
 
                 <div className="mx-auto mt-8 flex max-w-6xl flex-wrap items-center gap-3">
                     <Input className="max-w-xs" prefix={<Search className="size-4 text-stone-400" />} value={keyword} placeholder="搜索标题、正文或标签" allowClear onChange={(event) => changeFilter(() => setKeyword(event.target.value))} />
                     <div className="flex flex-wrap gap-2">
                         {categoryTabs.map((tab) => (
-                            <Tag.CheckableTag key={tab} checked={category === tab} className={cn("prompt-filter-tag", category === tab && "is-active")} onChange={() => changeFilter(() => setCategory(tab))}>
+                            <Tag.CheckableTag
+                                key={tab}
+                                checked={category === tab}
+                                className={cn("prompt-filter-tag", category === tab && "is-active")}
+                                onChange={() =>
+                                    changeFilter(() => {
+                                        setCategory(tab);
+                                        setSelectedTags([]);
+                                    })
+                                }
+                            >
                                 {tab}
                             </Tag.CheckableTag>
                         ))}
                     </div>
                     {data ? <span className="ml-auto text-xs text-stone-400">共 {filtered.length} 条</span> : null}
                 </div>
+
+                {tagOptions.length > 0 ? (
+                    <div className="mx-auto mt-4 flex max-w-6xl flex-wrap items-start gap-2">
+                        <span className="pt-1 text-xs font-medium text-stone-500 dark:text-stone-400">标签</span>
+                        <div className="flex flex-wrap gap-2">
+                            {tagOptions.map((tag) => (
+                                <Tag.CheckableTag key={tag} checked={selectedTags.includes(tag)} className={cn("prompt-filter-tag", selectedTags.includes(tag) && "is-active")} onChange={() => toggleTag(tag)}>
+                                    {tag}
+                                </Tag.CheckableTag>
+                            ))}
+                        </div>
+                    </div>
+                ) : null}
 
                 <div className="mx-auto mt-6 max-w-7xl">
                     {loadError ? (
@@ -126,7 +164,7 @@ export default function PlazaPage() {
                                         key={item.id}
                                         item={toPrompt(item)}
                                         onOpen={() => setDetail(item)}
-                                        onCopy={() => copyText(item.prompt, "提示词已复制，请到画布中粘贴使用")}
+                                        onCopy={() => copyItem(item)}
                                         extraAction={
                                             <Button size="small" type="primary" ghost disabled={saved} icon={<BookmarkPlus className="size-3.5" />} onClick={() => saveToFavorites(item)}>
                                                 {saved ? "已收藏" : "收藏"}
@@ -139,16 +177,11 @@ export default function PlazaPage() {
                     )}
                 </div>
 
-                <div className="mx-auto mt-6 flex max-w-7xl flex-wrap items-center justify-between gap-3 border-t border-stone-200 pt-4 dark:border-stone-700">
-                    {data ? (
-                        <a href={data.attribution.url} target="_blank" rel="noreferrer" className="text-xs text-stone-400 hover:text-stone-600 dark:hover:text-stone-300">
-                            灵感数据来自 {data.attribution.name} © {data.attribution.author} · <span className="underline">{data.attribution.license}</span>
-                        </a>
-                    ) : (
-                        <span />
-                    )}
-                    {filtered.length > GALLERY_PAGE_SIZE ? <Pagination current={page} total={filtered.length} pageSize={GALLERY_PAGE_SIZE} showSizeChanger={false} onChange={setPage} /> : null}
-                </div>
+                {filtered.length > GALLERY_PAGE_SIZE ? (
+                    <div className="mx-auto mt-6 flex max-w-7xl justify-end border-t border-stone-200 pt-4 dark:border-stone-700">
+                        <Pagination current={page} total={filtered.length} pageSize={GALLERY_PAGE_SIZE} showSizeChanger={false} onChange={setPage} />
+                    </div>
+                ) : null}
             </main>
 
             <Modal
@@ -159,29 +192,17 @@ export default function PlazaPage() {
                 centered
                 footer={
                     detail ? (
-                        <div className="flex items-center justify-between gap-3">
-                            <span className="text-xs text-stone-400">
-                                {detail.author ? `@${detail.author} · ` : ""}
-                                {formatCount(detail.likes)} 赞 · {formatCount(detail.views)} 浏览
-                                {detail.sourceUrl ? (
-                                    <a href={detail.sourceUrl} target="_blank" rel="noreferrer" className="ml-2 inline-flex items-center gap-1 hover:text-stone-600 dark:hover:text-stone-300">
-                                        原帖 <ExternalLink className="size-3" />
-                                    </a>
-                                ) : null}
-                            </span>
-                            <div className="flex gap-2">
-                                <Button onClick={() => detail && copyText(detail.prompt, "提示词已复制，请到画布中粘贴使用")}>复制</Button>
-                                <Button type="primary" disabled={libraryIds.has(detail.id)} icon={<BookmarkPlus className="size-3.5" />} onClick={() => saveToFavorites(detail)}>
-                                    {libraryIds.has(detail.id) ? "已收藏" : "收藏"}
-                                </Button>
-                            </div>
+                        <div className="flex justify-end gap-2">
+                            <Button onClick={() => copyItem(detail)}>复制</Button>
+                            <Button type="primary" disabled={libraryIds.has(detail.id)} icon={<BookmarkPlus className="size-3.5" />} onClick={() => saveToFavorites(detail)}>
+                                {libraryIds.has(detail.id) ? "已收藏" : "收藏"}
+                            </Button>
                         </div>
                     ) : null
                 }
             >
-                {detail ? (
+                {detail && detailPrompt ? (
                     <div className="thin-scrollbar max-h-[60vh] space-y-3 overflow-y-auto pr-1">
-                        {detail.coverUrl ? <img src={detail.coverUrl} alt={detail.title} className="w-full rounded-lg object-cover" loading="lazy" /> : null}
                         {detail.tags.length > 0 ? (
                             <div className="flex flex-wrap gap-1.5">
                                 {detail.tags.map((tag) => (
@@ -191,7 +212,14 @@ export default function PlazaPage() {
                                 ))}
                             </div>
                         ) : null}
-                        <pre className="whitespace-pre-wrap rounded-lg bg-stone-50 p-3 font-sans text-xs leading-5 text-stone-700 dark:bg-stone-900 dark:text-stone-300">{detail.prompt}</pre>
+                        {isComboPrompt(detailPrompt) ? (
+                            <div>
+                                {detail.prompt.trim() ? <p className="mb-3 whitespace-pre-wrap text-sm leading-6 text-stone-700 dark:text-stone-300">{detail.prompt}</p> : null}
+                                <PromptComboBuilder prompt={detailPrompt} onCopy={(text) => copyText(text, "组合提示词已复制，请到画布中粘贴使用")} useLabel="复制组合" />
+                            </div>
+                        ) : (
+                            <pre className="whitespace-pre-wrap rounded-lg bg-stone-50 p-3 font-sans text-xs leading-5 text-stone-700 dark:bg-stone-900 dark:text-stone-300">{detail.prompt}</pre>
+                        )}
                     </div>
                 ) : null}
             </Modal>
