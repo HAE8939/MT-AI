@@ -9,6 +9,7 @@ import { useAgentTemplateStore } from "@/stores/use-agent-template-store";
 import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { CanvasWorkflowRunPanel } from "@/components/canvas/canvas-workflow-run-panel";
+import { LocalWorkflowRunPanel } from "@/components/workflow/local-workflow-run-panel";
 import { WorkflowTaskList } from "@/components/layout/workflow-task-drawer";
 import type { AgentTemplate } from "@/types/workflow";
 
@@ -48,7 +49,7 @@ export function CanvasWorkflowTab({ theme }: { theme: Theme }) {
     };
 
     const startRun = (template: AgentTemplate) => {
-        if (template.spec.kind === "runninghub") setRunTarget(template);
+        if (template.spec.kind === "runninghub" || template.spec.kind === "local-workflow") setRunTarget(template);
         else insertCanvasTemplate(template);
     };
 
@@ -56,6 +57,8 @@ export function CanvasWorkflowTab({ theme }: { theme: Theme }) {
         <div className="thin-scrollbar min-h-0 flex-1 overflow-y-auto p-3">
             {activeTemplate && activeTemplate.spec.kind === "runninghub" ? (
                 <CanvasWorkflowRunPanel template={activeTemplate} theme={theme} currentProjectId={currentProjectId || undefined} onBack={() => setRunTarget(null)} />
+            ) : activeTemplate && activeTemplate.spec.kind === "local-workflow" ? (
+                <LocalWorkflowRunPanel template={activeTemplate} theme={theme} onBack={() => setRunTarget(null)} />
             ) : (
                 <div className="space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -68,7 +71,12 @@ export function CanvasWorkflowTab({ theme }: { theme: Theme }) {
                     </div>
                     <div className="space-y-2">
                         {workflows.map((template) => {
-                            const cloud = template.spec.kind === "runninghub";
+                            const kindTag =
+                                template.spec.kind === "runninghub"
+                                    ? { icon: <Cloud className="mr-0.5 inline size-3" />, label: "云工作流" }
+                                    : template.spec.kind === "local-workflow"
+                                      ? { icon: <LayoutTemplate className="mr-0.5 inline size-3" />, label: "本地工作流" }
+                                      : { icon: <LayoutTemplate className="mr-0.5 inline size-3" />, label: "画布模板" };
                             return (
                                 <div key={template.id} className="rounded-lg border px-3 py-2" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
                                     <div className="flex items-center gap-2">
@@ -76,8 +84,8 @@ export function CanvasWorkflowTab({ theme }: { theme: Theme }) {
                                         <div className="min-w-0 flex-1">
                                             <div className="flex min-w-0 items-center gap-1.5">
                                                 <div className="truncate text-sm font-medium leading-5">{template.name}</div>
-                                                <Tag className="m-0 shrink-0 border-0 px-1.5 text-[10px] leading-4" icon={cloud ? <Cloud className="mr-0.5 inline size-3" /> : <LayoutTemplate className="mr-0.5 inline size-3" />}>
-                                                    {cloud ? "云工作流" : "画布模板"}
+                                                <Tag className="m-0 shrink-0 border-0 px-1.5 text-[10px] leading-4" icon={kindTag.icon}>
+                                                    {kindTag.label}
                                                 </Tag>
                                             </div>
                                             <div className="truncate text-[11px] leading-4 opacity-65">{template.description || "暂无说明"}</div>
