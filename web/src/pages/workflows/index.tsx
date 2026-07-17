@@ -19,6 +19,7 @@ const CATEGORY_TABS: Array<{ value: AgentCategory | "all"; label: string }> = [
 
 function specKindLabel(template: AgentTemplate) {
     if (template.spec.kind === "runninghub") return { label: "云工作流", icon: <Cloud className="size-3.5" /> };
+    if (template.spec.kind === "local-workflow") return { label: "本地工作流", icon: <LayoutTemplate className="size-3.5" /> };
     return { label: "画布模板", icon: <LayoutTemplate className="size-3.5" /> };
 }
 
@@ -55,7 +56,10 @@ export default function WorkflowsPage() {
 
     const startRun = (template: AgentTemplate) => {
         if (template.spec.kind === "runninghub") setRunTarget(template);
-        else insertCanvasTemplate(template);
+        else if (template.spec.kind === "local-workflow") {
+            message.info("本地工作流需在画布侧栏「工作流」标签中运行");
+            navigate("/canvas");
+        } else insertCanvasTemplate(template);
     };
 
     return (

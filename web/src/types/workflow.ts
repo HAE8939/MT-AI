@@ -35,7 +35,25 @@ export type CanvasTemplateSpec = {
     connections: CanvasConnection[];
 };
 
-export type AgentTemplateSpec = DocAnalysisSpec | RunningHubSpec | CanvasTemplateSpec;
+/** 本地工作流的一个运行时输入槽：指向快照中某个节点，运行时由用户填值 */
+export type LocalWorkflowInputSlot = {
+    /** 指向 LocalWorkflowSpec.nodes 中节点的原始 id（快照内 id，运行时会重映射） */
+    nodeId: string;
+    /** 展示名，如「产品原图」「风格描述」 */
+    label: string;
+    /** image=图片输入（选画布节点/本地上传）；text=文本输入（提示词） */
+    kind: "text" | "image";
+};
+
+/** 本地自建工作流：一组节点+连线快照 + 输入槽标记，运行时按依赖顺序自动串跑本地生成 */
+export type LocalWorkflowSpec = {
+    kind: "local-workflow";
+    nodes: CanvasNodeData[];
+    connections: CanvasConnection[];
+    inputs: LocalWorkflowInputSlot[];
+};
+
+export type AgentTemplateSpec = DocAnalysisSpec | RunningHubSpec | CanvasTemplateSpec | LocalWorkflowSpec;
 
 export type AgentTemplate = {
     id: string;

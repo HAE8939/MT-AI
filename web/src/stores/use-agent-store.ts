@@ -8,7 +8,14 @@ export type AgentAttachment = { id: string; name: string; type: string; size: nu
 export type AgentChatItem = { id: string; role: AgentChatRole; title?: string; text: string; meta?: string; detail?: unknown; attachments?: AgentAttachment[]; streamId?: string };
 export type AgentEventLog = { id: string; time: string; title: string; text: string; raw?: unknown };
 export type AgentPendingToolCall = { requestId: string; name: string; input?: { ops?: CanvasAgentOp[]; path?: string } & Record<string, unknown> };
-export type AgentCanvasContext = { snapshot: CanvasAgentSnapshot; applyOps: (ops?: CanvasAgentOp[]) => CanvasAgentSnapshot; undoOps: () => CanvasAgentSnapshot | null; canUndo: boolean };
+export type AgentCanvasContext = {
+    snapshot: CanvasAgentSnapshot;
+    applyOps: (ops?: CanvasAgentOp[]) => CanvasAgentSnapshot;
+    undoOps: () => CanvasAgentSnapshot | null;
+    canUndo: boolean;
+    /** 本地工作流串跑用：触发单个生成节点并等待完成，回报实际产出节点 */
+    runGenerationAndWait?: (nodeId: string, prompt: string) => Promise<{ status: "success" | "error"; producedNodeIds: string[]; primaryNodeId?: string }>;
+};
 export type AgentThreadSummary = { id: string; preview: string; name?: string | null; cwd?: string; status?: string; source?: unknown; createdAt?: number; updatedAt?: number };
 export type AgentPanelTab = "chat" | "workflow" | "prompts" | "setup" | "history" | "log";
 export type AgentChatEngine = "model" | "codex";
