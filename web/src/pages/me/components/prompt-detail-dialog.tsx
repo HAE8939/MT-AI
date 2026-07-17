@@ -2,6 +2,7 @@ import { Copy, Pencil, Trash2 } from "lucide-react";
 import { Button, Modal, Space, Tag } from "antd";
 
 import { formatPromptDate, type Prompt } from "@/services/api/prompts";
+import { cn } from "@/lib/utils";
 import { PromptComboBuilder } from "@/components/prompts/prompt-combo-builder";
 import { isComboPrompt } from "@/components/prompts/prompt-combo";
 
@@ -25,16 +26,12 @@ export function PromptDetailDialog({
     return (
         <Modal title={prompt?.title} open={Boolean(prompt)} onCancel={onClose} footer={null} width={860}>
             {prompt ? (
-                <div className="grid gap-5 md:grid-cols-[300px_minmax(0,1fr)]">
-                    <div className="space-y-3">
-                        {prompt.coverUrl ? (
+                <div className={cn("grid gap-5", prompt.coverUrl && "md:grid-cols-[300px_minmax(0,1fr)]")}>
+                    {prompt.coverUrl ? (
+                        <div className="space-y-3">
                             <img src={prompt.coverUrl} alt={prompt.title} className="aspect-[4/3] w-full rounded-lg object-cover" />
-                        ) : (
-                            <div className="flex aspect-[4/3] w-full items-center justify-center rounded-lg bg-stone-100 text-stone-400 dark:bg-stone-800 dark:text-stone-500">
-                                <span className="text-4xl">✦</span>
-                            </div>
-                        )}
-                    </div>
+                        </div>
+                    ) : null}
                     <div className="min-w-0">
                         <div className="mb-2 flex flex-wrap items-center gap-2">
                             {isJsonPrompt ? <Tag color="blue" className="m-0">项目内置</Tag> : null}

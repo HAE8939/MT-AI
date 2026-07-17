@@ -43,13 +43,7 @@ export function PromptCard({
                     <button type="button" className="block w-full text-left" onClick={onOpen}>
                         <img src={item.coverUrl} alt={item.title} className="aspect-[4/3] w-full object-cover" />
                     </button>
-                ) : (
-                    <button type="button" className="block w-full" onClick={onOpen}>
-                        <div className="flex aspect-[4/3] w-full items-center justify-center bg-stone-100 text-stone-400 dark:bg-stone-800 dark:text-stone-500">
-                            <span className="text-3xl">✦</span>
-                        </div>
-                    </button>
-                )
+                ) : undefined
             }
         >
             <button type="button" className="block w-full text-left" onClick={onOpen}>
