@@ -62,7 +62,7 @@ export type RunningHubConfig = {
 };
 
 export const defaultRunningHubConfig: RunningHubConfig = {
-    baseUrl: "https://www.runninghub.cn",
+    baseUrl: "https://www.runninghub.ai",
     apiKey: "",
 };
 
@@ -302,11 +302,14 @@ export const useConfigStore = create<ConfigStore>()(
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
                 const persistedCosConfig = persistedState.cosConfig || {};
                 const baseConfig = loadedProjectConfig ? { ...defaultConfig, ...loadedProjectConfig } : defaultConfig;
+                const persistedRunningHub = { ...defaultRunningHubConfig, ...(persistedState.runninghub || {}) };
+                // RunningHub CN 站因政策变动停用，历史配置中的旧默认地址自动切换到国际站
+                if (persistedRunningHub.baseUrl === "https://www.runninghub.cn") persistedRunningHub.baseUrl = defaultRunningHubConfig.baseUrl;
                 return {
                     ...current,
                     initialized: false,
                     cosConfig: { ...defaultCosConfig, ...persistedCosConfig },
-                    runninghub: { ...defaultRunningHubConfig, ...(persistedState.runninghub || {}) },
+                    runninghub: persistedRunningHub,
                     config: normalizeConfig(baseConfig, persistedConfig),
                 };
             },

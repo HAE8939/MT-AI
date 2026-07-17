@@ -1,4 +1,4 @@
-import { pollRunningHubTask, submitRunningHubTask } from "@/services/providers/runninghub";
+import { RUNNINGHUB_BASE_URL, pollRunningHubTask, submitRunningHubTask } from "@/services/providers/runninghub";
 import { registerWorkflowTaskExecutor } from "@/hooks/use-workflow-task-runner";
 import { useConfigStore } from "@/stores/use-config-store";
 import type { RunningHubTaskParams } from "@/types/ai-workflow";
@@ -8,7 +8,7 @@ import type { RunningHubTaskParams } from "@/types/ai-workflow";
 function runninghubConfig() {
     const { runninghub } = useConfigStore.getState();
     if (!runninghub.apiKey.trim()) throw new Error("请先在配置页填写 RunningHub API Key");
-    return { baseUrl: runninghub.baseUrl || "https://www.runninghub.cn", apiKey: runninghub.apiKey };
+    return { baseUrl: runninghub.baseUrl || RUNNINGHUB_BASE_URL, apiKey: runninghub.apiKey };
 }
 
 export function registerRunningHubExecutor() {

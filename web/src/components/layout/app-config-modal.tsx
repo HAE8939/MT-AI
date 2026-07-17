@@ -390,7 +390,7 @@ export function AppConfigPanel({ showDoneButton = false, initialTab = "channels"
                                     </div>
                                     <div className="grid gap-4 md:grid-cols-2">
                                         <Form.Item label="Base URL" className="mb-0">
-                                            <Input value={runninghub.baseUrl} placeholder="https://www.runninghub.cn" onChange={(event) => updateRunningHubConfig("baseUrl", event.target.value)} />
+                                            <Input value={runninghub.baseUrl} placeholder="https://www.runninghub.ai" onChange={(event) => updateRunningHubConfig("baseUrl", event.target.value)} />
                                         </Form.Item>
                                         <Form.Item label="API Key" className="mb-0">
                                             <Input.Password value={runninghub.apiKey} placeholder="32 位 API Key" onChange={(event) => updateRunningHubConfig("apiKey", event.target.value)} />

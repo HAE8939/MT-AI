@@ -3,7 +3,7 @@ import axios from "axios";
 // RunningHub 云工作流 Provider：workflowId + nodeInfoList 提交 → outputs 轮询（813 排队 / 804 运行 / 805 失败 / 0 完成）。
 // 前置：工作流必须先在 RunningHub 平台手动成功运行过一次才能通过 API 调用。
 
-export const RUNNINGHUB_BASE_URL = "https://www.runninghub.cn";
+export const RUNNINGHUB_BASE_URL = "https://www.runninghub.ai";
 
 export type RunningHubNodeInfo = { nodeId: string; fieldName: string; fieldValue: string };
 

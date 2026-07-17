@@ -2,6 +2,7 @@
 
 ## Unreleased
 
++ [调整] RunningHub 默认地址因 CN 站政策变动切换为国际站 www.runninghub.ai：新默认值、配置页占位符与执行器兜底同步更新，历史配置中保存的旧 CN 默认地址在启动时自动迁移（手动改过的自定义地址不受影响）。
 + [新增] RunningHub 工作流支持画布本地图片作为输入：运行弹窗的图片参数可选画布上任意图片节点（blob/本地图在提交时经 RunningHub 上传接口换取 fileName），公网 URL 仍直接透传；上传期间按钮显示进度态。
 + [新增] 配置弹窗新增「RunningHub」标签页（Base URL + API Key），与执行器报错提示对齐；Key 仍可在登记弹窗填写，两处同源。
 + [新增] 登记 RunningHub 工作流支持粘贴「导出工作流 API」JSON 自动识别参数（LoadImage → 图片、CLIPTextEncode → 提示词并带出默认值），参数行新增默认值输入。
