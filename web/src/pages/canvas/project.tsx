@@ -339,6 +339,7 @@ function InfiniteCanvasPage() {
     const selectedNodeIdsRef = useRef(selectedNodeIds);
     const viewportRef = useRef(viewport);
     const generateNodeRef = useRef<((nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => Promise<void>) | null>(null);
+    const handleGenerateNodeRef = useRef<((nodeId: string, mode: CanvasNodeGenerationMode, prompt: string) => Promise<void>) | null>(null);
     const connectingParamsRef = useRef(connectingParams);
     const connectionTargetNodeIdRef = useRef(connectionTargetNodeId);
     const selectionBoxRef = useRef(selectionBox);
@@ -875,10 +876,33 @@ function InfiniteCanvasPage() {
         return { ...agentUndoSnapshot, projectId, title: currentProject?.title || "未命名画布" };
     }, [agentUndoSnapshot, currentProject?.title, projectId]);
 
+    /** 本地工作流串跑：触发单个生成节点并等待完成，从节点 diff 出实际产出与成败 */
+    const runGenerationAndWait = useCallback(
+        async (nodeId: string, prompt: string): Promise<{ status: "success" | "error"; producedNodeIds: string[]; primaryNodeId?: string }> => {
+            const beforeIds = new Set(nodesRef.current.map((node) => node.id));
+            const target = nodesRef.current.find((node) => node.id === nodeId);
+            const mode = (target?.metadata?.generationMode as CanvasNodeGenerationMode) || "image";
+            const effectivePrompt = prompt.trim() ? prompt : target?.metadata?.composerContent ?? target?.metadata?.prompt ?? "";
+            await handleGenerateNodeRef.current?.(nodeId, mode, effectivePrompt);
+            // 生成完成后 nodesRef.current 已同步。产出 = 由该 step 节点新连出、运行前不存在的图片节点。
+            const producedIds = connectionsRef.current
+                .filter((connection) => connection.fromNodeId === nodeId && !beforeIds.has(connection.toNodeId))
+                .map((connection) => connection.toNodeId);
+            const producedNodes = nodesRef.current.filter((node) => producedIds.includes(node.id) && node.type === CanvasNodeType.Image);
+            const primary = producedNodes.find((node) => node.metadata?.isBatchRoot) || producedNodes[0];
+            const anySuccess = producedNodes.some((node) => node.metadata?.status === NODE_STATUS_SUCCESS);
+            const stepNode = nodesRef.current.find((node) => node.id === nodeId);
+            const stepFailed = stepNode?.metadata?.status === NODE_STATUS_ERROR;
+            const status: "success" | "error" = anySuccess && !stepFailed ? "success" : "error";
+            return { status, producedNodeIds: producedNodes.map((node) => node.id), primaryNodeId: primary?.id };
+        },
+        [],
+    );
+
     useEffect(() => {
-        setAgentCanvasContext({ snapshot: agentSnapshot, applyOps: applyAgentOps, undoOps: undoAgentOps, canUndo: Boolean(agentUndoSnapshot) });
+        setAgentCanvasContext({ snapshot: agentSnapshot, applyOps: applyAgentOps, undoOps: undoAgentOps, canUndo: Boolean(agentUndoSnapshot), runGenerationAndWait });
         return () => setAgentCanvasContext(null);
-    }, [agentSnapshot, applyAgentOps, agentUndoSnapshot, setAgentCanvasContext, undoAgentOps]);
+    }, [agentSnapshot, applyAgentOps, agentUndoSnapshot, setAgentCanvasContext, undoAgentOps, runGenerationAndWait]);
     /** 画布节点一键添加到右侧对话：图片进附件，文字进输入框 */
     const addNodeToChat = useCallback(
         async (nodeId: string) => {
@@ -2772,6 +2796,7 @@ function InfiniteCanvasPage() {
     );
     useEffect(() => {
         generateNodeRef.current = handleGenerateNode;
+        handleGenerateNodeRef.current = handleGenerateNode;
     }, [handleGenerateNode]);
 
     const handleRetryNode = useCallback(
