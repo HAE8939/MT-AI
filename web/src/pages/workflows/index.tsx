@@ -215,7 +215,7 @@ function RunningHubRegisterDialog({ open, onClose }: { open: boolean; onClose: (
                                 <Input placeholder="fieldName" value={field.fieldName} onChange={(event) => setFields((current) => current.map((item, i) => (i === index ? { ...item, fieldName: event.target.value } : item)))} />
                                 <Input placeholder="展示名（如：主体描述）" value={field.label} onChange={(event) => setFields((current) => current.map((item, i) => (i === index ? { ...item, label: event.target.value } : item)))} />
                                 <Input placeholder="默认值（可空）" value={field.defaultValue || ""} onChange={(event) => setFields((current) => current.map((item, i) => (i === index ? { ...item, defaultValue: event.target.value } : item)))} />
-                                <Select value={field.kind} options={[{ value: "text", label: "文本" }, { value: "image", label: "图片" }]} onChange={(kind) => setFields((current) => current.map((item, i) => (i === index ? { ...item, kind } : item)))} />
+                                <Select value={field.kind} options={[{ value: "text", label: "文本" }, { value: "image", label: "图片" }, { value: "number", label: "数值" }]} onChange={(kind) => setFields((current) => current.map((item, i) => (i === index ? { ...item, kind } : item)))} />
                                 <Button type="text" size="small" danger icon={<Trash2 className="size-3.5" />} disabled={fields.length <= 1} onClick={() => setFields((current) => current.filter((_, i) => i !== index))} />
                             </div>
                         ))}

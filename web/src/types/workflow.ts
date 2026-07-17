@@ -9,8 +9,8 @@ export type RunningHubParamField = {
     fieldName: string;
     /** 展示名，如「主体描述」 */
     label: string;
-    /** text=文本输入；image=图片输入（公网 URL 或经 RunningHub 上传） */
-    kind: "text" | "image";
+    /** text=文本输入；image=图片输入（画布节点/本地上传/公网 URL，均在提交时解析）；number=数值步进器 */
+    kind: "text" | "image" | "number";
     /** 未填写时使用的默认值（来自工作流导出的原值） */
     defaultValue?: string;
 };
