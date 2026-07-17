@@ -63,6 +63,17 @@ bun run build      # 生产构建，输出 web/dist
 
 - Windows：运行 `setup-codex.bat` 一键安装 Codex 插件，或 `start-agent.bat` 直接启动本地 Agent 后在网页连接；`start-all.bat` 可同时拉起本地 Agent 与网页服务并自动打开浏览器。
 - 直接运行 `npx -y @basketikun/canvas-agent` 不会安装 MCP、不增加 Codex token 消耗；只有安装插件或手动 `codex mcp add` 后工具才进入 Codex 上下文。
+- 本地构建直连（无需插件市场和 npm，二次开发或 `codex` CLI 不可用时推荐）：先在 `canvas-agent/` 下执行 `npm install && npx tsc -p tsconfig.json` 构建，再在 `~/.codex/config.toml` 注册本地构建产物，重启 Codex 生效：
+
+  ```toml
+  [mcp_servers.mt-ai]
+  command = "node"
+  args = ['<仓库路径>/canvas-agent/dist/index.js', "mcp"]
+  startup_timeout_sec = 20
+  tool_timeout_sec = 90
+  ```
+
+  这样 MCP 工具与本仓库网页版本完全一致（npx 拉取的已发布包可能落后于本仓库改动）；`canvas-agent` 源码更新后需重新构建并重启 Codex。
 
 ## New API 自动配置
 
