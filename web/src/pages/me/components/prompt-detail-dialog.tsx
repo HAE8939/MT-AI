@@ -8,14 +8,12 @@ import { isComboPrompt } from "@/components/prompts/prompt-combo";
 
 export function PromptDetailDialog({
     prompt,
-    isJsonPrompt = false,
     onClose,
     onCopy,
     onEdit,
     onDelete,
 }: {
     prompt: Prompt | null;
-    isJsonPrompt?: boolean;
     onClose: () => void;
     onCopy: (prompt: string) => void;
     onEdit?: (prompt: Prompt) => void;
@@ -34,7 +32,6 @@ export function PromptDetailDialog({
                     ) : null}
                     <div className="min-w-0">
                         <div className="mb-2 flex flex-wrap items-center gap-2">
-                            {isJsonPrompt ? <Tag color="blue" className="m-0">项目内置</Tag> : null}
                             {prompt.group ? <Tag className="m-0">{prompt.group}</Tag> : null}
                             {combo ? <Tag color="purple" className="m-0">组合式</Tag> : null}
                         </div>
@@ -59,7 +56,6 @@ export function PromptDetailDialog({
                         )}
                         <div className="mt-4 text-xs text-stone-500 dark:text-stone-400">
                             创建：{formatPromptDate(prompt.createdAt)} · 更新：{formatPromptDate(prompt.updatedAt)}
-                            {isJsonPrompt ? " · 来自 prompts.json" : null}
                         </div>
                         <Space wrap className="mt-5">
                             {combo ? null : (
@@ -74,7 +70,7 @@ export function PromptDetailDialog({
                             ) : null}
                             {onDelete ? (
                                 <Button danger icon={<Trash2 className="size-4" />} onClick={() => onDelete(prompt)}>
-                                    {isJsonPrompt ? "隐藏" : "删除"}
+                                    删除
                                 </Button>
                             ) : null}
                         </Space>

@@ -32,17 +32,11 @@ export type Prompt = {
 type PromptStore = {
     hydrated: boolean;
     prompts: Prompt[];
-    jsonIds: string[];
-    deletedJsonIds: string[];
-    editedPrompts: Record<string, Prompt>;
     /** 用户自建分组（提示词自带的 group 字段会在 UI 层合并进来） */
     groups: string[];
-    /** 从 localforage 还原的用户自建提示词，仅 rehydration 时使用 */
-    userPrompts: Prompt[];
     addPrompt: (prompt: Omit<Prompt, "id" | "createdAt" | "updatedAt">) => string;
     updatePrompt: (id: string, patch: Partial<Omit<Prompt, "id" | "createdAt">>) => void;
     removePrompt: (id: string) => void;
-    restoreJsonPrompt: (id: string) => void;
     duplicatePrompt: (id: string) => string | null;
     addGroup: (name: string) => void;
     renameGroup: (oldName: string, newName: string) => void;
@@ -52,7 +46,7 @@ type PromptStore = {
 
 const PROMPT_STORE_KEY = "infinite-canvas:prompt_store";
 
-/** 灵感广场收藏条目的固定分组；与 scripts/build-gallery.mjs 精选子集使用同一分组名 */
+/** 灵感广场收藏条目的固定分组 */
 export const GALLERY_GROUP = "灵感精选";
 
 function createPromptId() {
@@ -76,51 +70,12 @@ export function normalizePromptKeys(value: unknown): PromptKeyGroup[] | undefine
     return keys.length > 0 ? keys : undefined;
 }
 
-function mergePrompts(
-    jsonPrompts: Prompt[],
-    userPrompts: Prompt[],
-    editedPrompts: Record<string, Prompt>,
-    deletedJsonIds: string[],
-): Prompt[] {
-    const deletedSet = new Set(deletedJsonIds);
-    const jsonMap = new Map(jsonPrompts.map((p) => [p.id, p]));
-
-    // JSON prompts: show edited version if available, hide if deleted
-    const jsonVisible = jsonPrompts
-        .filter((p) => !deletedSet.has(p.id))
-        .map((p) => editedPrompts[p.id] || p);
-
-    // User prompts that aren't overriding a JSON prompt
-    const userOnly = userPrompts.filter((p) => !jsonMap.has(p.id));
-
-    return [...jsonVisible, ...userOnly].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
-    );
-}
-
-async function loadJsonPrompts(): Promise<Prompt[]> {
-    try {
-        const base = import.meta.env.BASE_URL || "/";
-        const url = `${base}prompts.json`;
-        const response = await fetch(url, { cache: "no-store" });
-        if (!response.ok) return [];
-        const data = await response.json();
-        return Array.isArray(data?.prompts) ? data.prompts : [];
-    } catch {
-        return [];
-    }
-}
-
 export const usePromptStore = create<PromptStore>()(
     persist(
         (set, get) => ({
             hydrated: false,
             prompts: [],
-            jsonIds: [],
-            deletedJsonIds: [],
-            editedPrompts: {},
             groups: [],
-            userPrompts: [],
 
             addPrompt: (prompt) => {
                 const now = new Date().toISOString();
@@ -131,52 +86,13 @@ export const usePromptStore = create<PromptStore>()(
             },
 
             updatePrompt: (id, patch) => {
-                const isJson = get().jsonIds.includes(id);
-                set((state) => {
-                    const updated = state.prompts.map((p) =>
-                        p.id === id ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p,
-                    );
-                    if (isJson) {
-                        const edited = updated.find((p) => p.id === id);
-                        return {
-                            prompts: updated,
-                            editedPrompts: edited ? { ...state.editedPrompts, [id]: edited } : state.editedPrompts,
-                        };
-                    }
-                    return { prompts: updated };
-                });
+                set((state) => ({
+                    prompts: state.prompts.map((p) => (p.id === id ? { ...p, ...patch, updatedAt: new Date().toISOString() } : p)),
+                }));
             },
 
             removePrompt: (id) => {
-                const isJson = get().jsonIds.includes(id);
-                set((state) => {
-                    const next: Partial<PromptStore> = {
-                        prompts: state.prompts.filter((p) => p.id !== id),
-                    };
-                    if (isJson) {
-                        if (!state.deletedJsonIds.includes(id)) {
-                            next.deletedJsonIds = [...state.deletedJsonIds, id];
-                        }
-                        const { [id]: _, ...restEdited } = state.editedPrompts;
-                        next.editedPrompts = restEdited;
-                    }
-                    return next;
-                });
-            },
-
-            restoreJsonPrompt: (id) => {
-                // Remove from deletedJsonIds — triggers persist to localforage
-                set((state) => ({
-                    deletedJsonIds: state.deletedJsonIds.filter((dId) => dId !== id),
-                }));
-                // Reload JSON and re-merge
-                void loadJsonPrompts().then((jsonPrompts) => {
-                    const state = get();
-                    set({
-                        jsonIds: jsonPrompts.map((p) => p.id),
-                        prompts: mergePrompts(jsonPrompts, state.prompts, state.editedPrompts, state.deletedJsonIds),
-                    });
-                });
+                set((state) => ({ prompts: state.prompts.filter((p) => p.id !== id) }));
             },
 
             duplicatePrompt: (id) => {
@@ -207,40 +123,27 @@ export const usePromptStore = create<PromptStore>()(
                 if (!trimmed || trimmed === oldName) return;
                 set((state) => {
                     const now = new Date().toISOString();
-                    const jsonIdSet = new Set(state.jsonIds);
-                    const editedPrompts = { ...state.editedPrompts };
-                    const prompts = state.prompts.map((p) => {
-                        if (p.group !== oldName) return p;
-                        const next = { ...p, group: trimmed, updatedAt: now };
-                        if (jsonIdSet.has(p.id)) editedPrompts[p.id] = next;
-                        return next;
-                    });
-                    const groups = Array.from(
-                        new Set(state.groups.map((g) => (g === oldName ? trimmed : g))),
-                    );
-                    return { prompts, editedPrompts, groups };
+                    const prompts = state.prompts.map((p) => (p.group === oldName ? { ...p, group: trimmed, updatedAt: now } : p));
+                    const groups = Array.from(new Set(state.groups.map((g) => (g === oldName ? trimmed : g))));
+                    return { prompts, groups };
                 });
             },
 
             removeGroup: (name) => {
                 set((state) => {
                     const now = new Date().toISOString();
-                    const jsonIdSet = new Set(state.jsonIds);
-                    const editedPrompts = { ...state.editedPrompts };
                     const prompts = state.prompts.map((p) => {
                         if (p.group !== name) return p;
                         const { group: _group, ...rest } = p;
-                        const next: Prompt = { ...rest, updatedAt: now };
-                        if (jsonIdSet.has(p.id)) editedPrompts[p.id] = next;
-                        return next;
+                        return { ...rest, updatedAt: now } as Prompt;
                     });
-                    return { prompts, editedPrompts, groups: state.groups.filter((g) => g !== name) };
+                    return { prompts, groups: state.groups.filter((g) => g !== name) };
                 });
             },
 
             importPrompts: (items, groups) => {
                 const state = get();
-                const existingIds = new Set([...state.prompts.map((p) => p.id), ...state.deletedJsonIds]);
+                const existingIds = new Set(state.prompts.map((p) => p.id));
                 const now = new Date().toISOString();
                 const toAdd: Prompt[] = [];
                 let skipped = 0;
@@ -298,25 +201,9 @@ export const usePromptStore = create<PromptStore>()(
                 setItem: (name, value) => localForageStorage.setItem(name, JSON.stringify(value)),
                 removeItem: (name) => localForageStorage.removeItem(name),
             } satisfies PersistStorage<PromptStore>,
-            partialize: (state) =>
-                ({
-                    userPrompts: state.prompts.filter((p) => !state.jsonIds.includes(p.id)),
-                    editedPrompts: state.editedPrompts,
-                    deletedJsonIds: state.deletedJsonIds,
-                    groups: state.groups,
-                }) as StorageValue<PromptStore>["state"],
+            partialize: (state) => ({ prompts: state.prompts, groups: state.groups }) as StorageValue<PromptStore>["state"],
             onRehydrateStorage: () => () => {
-                void (async () => {
-                    const jsonPrompts = await loadJsonPrompts();
-                    const state = usePromptStore.getState();
-                    // After rehydration, state.userPrompts contains user-created prompts from localforage
-                    // 老数据没有 groups 字段时保持默认空数组
-                    usePromptStore.setState({
-                        hydrated: true,
-                        jsonIds: jsonPrompts.map((p) => p.id),
-                        prompts: mergePrompts(jsonPrompts, state.userPrompts, state.editedPrompts, state.deletedJsonIds),
-                    });
-                })();
+                usePromptStore.setState({ hydrated: true });
             },
         },
     ),

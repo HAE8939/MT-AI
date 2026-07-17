@@ -1,4 +1,4 @@
-import { CopyPlus, Download, FolderCog, Plus, RotateCcw, Search, Upload } from "lucide-react";
+import { CopyPlus, Download, FolderCog, Plus, Search, Upload } from "lucide-react";
 import { useMemo, useRef, useState } from "react";
 import { App, Button, Dropdown, Empty, Input, Modal, Spin, Tag } from "antd";
 
@@ -31,9 +31,6 @@ export function PromptsSection({ mode }: { mode: "prompts" | "favorites" }) {
     const favorites = mode === "favorites";
     const copyText = useCopyText();
     const prompts = usePromptStore((s) => s.prompts);
-    const jsonIds = usePromptStore((s) => s.jsonIds);
-    const deletedJsonIds = usePromptStore((s) => s.deletedJsonIds);
-    const restoreJsonPrompt = usePromptStore((s) => s.restoreJsonPrompt);
     const importPrompts = usePromptStore((s) => s.importPrompts);
     const listGroup = favorites ? GALLERY_GROUP : selectedGroup;
     const { items: rawItems, tags: promptTags, groups: groupInfo, total: totalPrompts, isLoading } = usePromptList({ keyword: titleKeyword, tags: selectedTags, category: selectedCategory, group: listGroup });
@@ -71,24 +68,18 @@ export function PromptsSection({ mode }: { mode: "prompts" | "favorites" }) {
     };
 
     const handleDelete = (item: Prompt) => {
-        const isJson = jsonIds.includes(item.id);
         Modal.confirm({
-            title: isJson ? "隐藏提示词" : "删除提示词",
-            content: isJson ? `确定要隐藏「${item.title}」吗？此提示词来自项目文件，重新加载页面后可自动恢复。` : `确定要删除「${item.title}」吗？此操作不可撤销。`,
-            okText: isJson ? "隐藏" : "删除",
+            title: "删除提示词",
+            content: `确定要删除「${item.title}」吗？此操作不可撤销。`,
+            okText: "删除",
             okButtonProps: { danger: true },
             cancelText: "取消",
             onOk: () => {
                 removePrompt(item.id);
-                message.success(isJson ? "已隐藏" : "已删除");
+                message.success("已删除");
                 if (selectedPrompt?.id === item.id) setSelectedPrompt(null);
             },
         });
-    };
-
-    const handleRestore = (id: string) => {
-        restoreJsonPrompt(id);
-        message.success("已恢复");
     };
 
     const exportAll = () => {
@@ -215,39 +206,16 @@ export function PromptsSection({ mode }: { mode: "prompts" | "favorites" }) {
                                 />
                             ))}
                         </div>
-                        {promptItems.length === 0 && totalPrompts === 0 && deletedJsonIds.length === 0 ? (
-                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={favorites ? "还没有收藏，去灵感广场逛逛吧" : "还没有提示词，编辑 public/prompts.json 或点击「新建提示词」开始创建"} className="py-16" />
+                        {promptItems.length === 0 && totalPrompts === 0 ? (
+                            <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={favorites ? "还没有收藏，去灵感广场逛逛吧" : "还没有提示词，点击「新建提示词」创建，或去灵感广场收藏"} className="py-16" />
                         ) : promptItems.length === 0 ? (
                             <Empty image={Empty.PRESENTED_IMAGE_SIMPLE} description={favorites ? "还没有收藏，去灵感广场逛逛吧" : "没有找到匹配的提示词"} className="py-16" />
-                        ) : null}
-
-                        {!favorites && deletedJsonIds.length > 0 ? (
-                            <div className="mt-8 max-w-7xl rounded-lg border border-stone-200 bg-stone-50 p-4 dark:border-stone-700 dark:bg-stone-900">
-                                <div className="mb-2 text-xs font-medium text-stone-500 dark:text-stone-400">已隐藏的项目内置提示词（{deletedJsonIds.length} 条）</div>
-                                <div className="flex flex-wrap gap-2">
-                                    {deletedJsonIds.map((id) => (
-                                        <Tag
-                                            key={id}
-                                            closable
-                                            onClose={(e) => {
-                                                e.preventDefault();
-                                                handleRestore(id);
-                                            }}
-                                            className="text-xs"
-                                        >
-                                            <RotateCcw className="mr-1 inline size-3" />
-                                            {id}
-                                        </Tag>
-                                    ))}
-                                </div>
-                            </div>
                         ) : null}
                     </div>
                 ) : null}
 
             <PromptDetailDialog
                 prompt={selectedPrompt}
-                isJsonPrompt={selectedPrompt ? jsonIds.includes(selectedPrompt.id) : false}
                 onClose={() => setSelectedPrompt(null)}
                 onCopy={(prompt) => copyText(prompt, "提示词已复制")}
                 onEdit={favorites ? undefined : openEditEditor}
