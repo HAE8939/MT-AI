@@ -16,8 +16,8 @@ MT-AI 提供了一个 Codex App 插件，用来把 Codex 和本地 Canvas Agent 
 把下面这段发给 Codex：
 
 ```text
-请从 https://github.com/basketikun/infinite-canvas.git 安装 MT-AI Codex 插件。
-请 clone 仓库到 ~/plugins/infinite-canvas，确认 plugins/mt-ai/.codex-plugin/plugin.json 存在，
+请从 https://github.com/HAE8939/MT-AI.git 安装 MT-AI Codex 插件。
+请 clone 仓库到 ~/plugins/MT-AI，确认 plugins/mt-ai/.codex-plugin/plugin.json 存在，
 把 plugins/mt-ai 加入 personal marketplace，先运行 codex plugin marketplace add ~，
 再运行 codex plugin add mt-ai@personal。
 安装后请校验插件，并告诉我是否需要开启一个新对话来加载新技能和 MCP 工具。
@@ -31,7 +31,7 @@ MT-AI 提供了一个 Codex App 插件，用来把 Codex 和本地 Canvas Agent 
 
 ```bash
 mkdir -p ~/plugins
-git clone https://github.com/basketikun/infinite-canvas.git ~/plugins/infinite-canvas
+git clone https://github.com/HAE8939/MT-AI.git ~/plugins/MT-AI
 ```
 
 确保 `~/.agents/plugins/marketplace.json` 中有 MT-AI 条目。这里的 `path` 要指向仓库里的插件子目录：
@@ -47,7 +47,7 @@ git clone https://github.com/basketikun/infinite-canvas.git ~/plugins/infinite-c
       "name": "mt-ai",
       "source": {
         "source": "local",
-        "path": "./plugins/infinite-canvas/plugins/mt-ai"
+        "path": "./plugins/MT-AI/plugins/mt-ai"
       },
       "policy": {
         "installation": "AVAILABLE",
@@ -73,7 +73,7 @@ codex plugin add mt-ai@personal
 如果你正在 MT-AI 仓库中开发插件，可以直接使用仓库自带的 marketplace：
 
 ```bash
-cd /path/to/infinite-canvas
+cd /path/to/MT-AI
 codex plugin marketplace add "$(pwd)"
 codex plugin add mt-ai@mt-ai-local
 ```
@@ -108,6 +108,26 @@ codex plugin add mt-ai@mt-ai-local
 - 插件暴露的 MCP、app 或入口脚本
 
 重新安装后建议开启新对话，避免旧对话继续使用缓存中的技能和 MCP 工具。
+
+## 本地构建直连（二次开发推荐）
+
+npx 拉取的已发布包可能落后于仓库网页版本。二次开发时建议本地构建 Canvas Agent 并在 `~/.codex/config.toml` 直接注册 MCP：
+
+```bash
+cd canvas-agent
+npm install
+npx tsc -p tsconfig.json
+```
+
+```toml
+[mcp_servers.mt-ai]
+command = "node"
+args = ['<仓库路径>/canvas-agent/dist/index.js', "mcp"]
+startup_timeout_sec = 20
+tool_timeout_sec = 90
+```
+
+本地构建与仓库网页版本完全同步；`canvas-agent` 源码更新后需重新构建并重启 Codex。
 
 ## 手动排查
 

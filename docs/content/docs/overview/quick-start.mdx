@@ -5,18 +5,13 @@ description: 用最少步骤把 MT-AI 跑起来
 
 # 快速开始
 
-如果你只是想先把项目跑起来，优先部署或启动 `web/` 前端。
-
-## Vercel 部署
-
-在 Vercel 中导入仓库即可，根目录 `vercel.json` 会构建 `web/`。当前版本的 AI 请求由浏览器前台直连用户自己的 OpenAI 兼容地址，不需要额外配置服务端。
+MT-AI 前端为纯静态应用、无后端：API Key 与画布数据保存在浏览器本地，AI 请求由浏览器直连你配置的接口。只需要启动 `web/` 前端即可使用。
 
 ## 本地启动
 
 ```bash
-git clone git@github.com:basketikun/infinite-canvas.git
-cd infinite-canvas
-cd web
+git clone https://github.com/HAE8939/MT-AI.git
+cd MT-AI/web
 bun install
 bun run dev
 ```
@@ -27,22 +22,42 @@ bun run dev
 http://localhost:3000
 ```
 
-## Docker 启动
+Windows 用户也可以直接双击仓库根目录的 `start-all.bat`，同时拉起本地 Canvas Agent 与网页服务并自动打开浏览器（不需要本地 Agent 时用 `web/` 下的 `bun run dev` 即可）。
 
-如果你需要基于当前源码构建镜像：
+## 部署
 
-```bash
-docker build -t mt-ai .
-docker run --rm -p 3000:3000 mt-ai
+| 方式 | 说明 |
+| --- | --- |
+| 本地 | `bun run build` 产出 `web/dist` 纯静态文件，任意静态服务器可托管 |
+| Vercel | 仓库根目录自带 `vercel.json`，导入仓库即用 |
+| Render | 一键部署，见 [Render 部署](/docs/overview/render) |
+| Docker | nginx 静态托管，见 [Docker 部署](/docs/overview/docker) |
+| GitHub Pages | 推送版本 tag 自动发布（仓库 Pages 设置选 GitHub Actions） |
+
+## 配一个渠道
+
+打开右上角配置（或 `/config` 页），填入 OpenAI / Gemini 兼容接口的 `Base URL` 和 `API Key`，拉取模型列表即可开始生成。也可以一键添加东木-AI 聚合平台，或单独配置火山方舟 Seedance、RunningHub。细节见[配置指南](/docs/canvas/config-guide)。
+
+使用 **New API** 的话，在其 `系统设置 → 聊天方式` 中添加：
+
+```text
+https://你的部署地址?apiKey={key}&baseUrl={address}
 ```
 
-## 首次使用建议
+跳转后自动写入渠道配置。
 
-- 先打开右上角配置弹窗，填入自己的 `Base URL`、`API Key` 和模型名。
-- 如果需要提示词仓库内容，打开 `/prompts` 会由浏览器前端直连拉取并缓存到 IndexedDB。
-- 如果需要跨设备同步画布、素材和生成记录，可在配置弹窗中填写 WebDAV。
+团队部署可编辑 `web/public/config.json` 做管理员级配置下发（渠道、腾讯云 COS、RunningHub），所有打开站点的设备自动同步该配置。
 
-## 说明
+## 开始创作
 
-- 当前画布项目和“我的素材”主要保存在浏览器本地，WebDAV 同步需要用户自行配置。
-- AI API Key 保存在浏览器本地，并由前端直接请求 OpenAI 兼容接口。
+1. 新建画布，放一个文本节点写提示词（或从侧栏「提示词」tab 的组合模板点选生成）。
+2. 点击文本节点的「生图」，在自动创建的生成配置节点里调整模型、比例、数量。
+3. 连线迭代：生成结果可继续作为参考图、进入图片工具箱加工，或保存为工作流复用。
+
+画布操作细节见[画布节点操作手册](/docs/canvas/canvas-node-manual)，快捷键见[画布快捷键](/docs/canvas/canvas-shortcuts)。
+
+## 数据说明
+
+- 画布、提示词、素材、生成记录保存在浏览器 IndexedDB，不随账号同步；支持全量 JSON 导入导出。
+- 媒体文件可选配置腾讯云 COS 本地优先上传队列，跨设备通过 COS 直链访问。
+- API Key 保存在浏览器本地，由浏览器直连所配置的接口，不经过任何中转——因此只适合个人或可信环境使用。

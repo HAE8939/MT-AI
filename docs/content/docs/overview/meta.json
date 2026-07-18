@@ -4,13 +4,14 @@
   "defaultOpen": true,
   "pages": [
     "quick-start",
-    "codex-app-plugin",
-    "codex-capabilities",
+    "integration-guide",
     "features",
+    "---部署---",
     "render",
     "docker",
-    "third-party-prompt-repositories",
-    "[在线体验](https://canvas.best/)",
+    "---AI 接入---",
+    "codex-app-plugin",
+    "codex-capabilities",
     "local-codex-canvas"
   ]
 }

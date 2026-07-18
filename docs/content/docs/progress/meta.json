@@ -4,9 +4,10 @@
   "defaultOpen": true,
   "pages": [
     "[更新日志](/docs/progress/changelog)",
-    "reduction-refactor-plan",
-    "local-agent-integration-plan",
     "pending-test",
-    "todo"
+    "todo",
+    "---历史规划（已实现）---",
+    "reduction-refactor-plan",
+    "local-agent-integration-plan"
   ]
 }

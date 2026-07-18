@@ -5,9 +5,9 @@ description: 使用 Render 部署 MT-AI
 
 # Render 部署
 
-点击下面链接即可部署到 Render：
+点击下面链接即可部署到 Render（`render.yaml`，`runtime: docker`，使用仓库根目录 Dockerfile 做 nginx 静态托管）：
 
-[部署到 Render](https://render.com/deploy?repo=https://github.com/basketikun/infinite-canvas)
+[部署到 Render](https://render.com/deploy?repo=https://github.com/HAE8939/MT-AI)
 
 ## 部署步骤
 
@@ -22,7 +22,5 @@ description: 使用 Render 部署 MT-AI
 默认使用 Render 免费 Web Service：
 
 - 空闲约 15 分钟后会休眠，下次访问会自动唤醒。
-- 当前主应用数据默认保存在浏览器本地；第三方提示词由浏览器前端直连拉取。
-- 适合体验和演示，不适合长期保存正式数据。
-
-长期使用建议优先部署到 Vercel，或自行配置 WebDAV 同步浏览器本地数据。
+- 画布、素材等数据默认保存在访问者浏览器本地，与部署实例无关，休眠不影响数据。
+- 适合体验和演示；长期使用建议优先部署到 Vercel，媒体文件可配置腾讯云 COS 同步。

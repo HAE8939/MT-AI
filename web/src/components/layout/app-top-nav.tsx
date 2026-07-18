@@ -1,4 +1,4 @@
-import { Bot, Menu } from "lucide-react";
+import { Bot, BookOpen, Menu } from "lucide-react";
 import { Button, Tooltip } from "antd";
 import { Link, useLocation } from "react-router-dom";
 
@@ -86,6 +86,16 @@ export function AppTopNav() {
                         <div className="my-auto flex h-9 min-w-0 items-center justify-end gap-2 justify-self-end whitespace-nowrap">
                             <CosUploadCenter />
                             <WorkflowTaskCenter />
+                            <Tooltip title="文档">
+                                <Button
+                                    type="text"
+                                    shape="circle"
+                                    className="!h-8 !w-8 !min-w-8"
+                                    icon={<BookOpen className="size-4" />}
+                                    onClick={() => window.open(import.meta.env.DEV ? "http://localhost:3002/docs" : "https://docs.mtai.app", "_blank")}
+                                    aria-label="查看文档"
+                                />
+                            </Tooltip>
                             <CodexStatusButton />
                             <Tooltip title={panelOpen ? "收起 Agent" : "打开 Agent"}>
                                 <Button type="text" shape="circle" className="!h-8 !w-8 !min-w-8" icon={<Bot className="size-4" />} onClick={togglePanel} aria-label="打开 Agent" />

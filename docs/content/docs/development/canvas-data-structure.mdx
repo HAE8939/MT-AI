@@ -5,110 +5,102 @@ description: 画布本地存储、节点结构、媒体文件与清理机制
 
 # 画布数据结构
 
-本文档说明当前画布在前端本地保存的数据结构、图片文件的存储和清理方式。
+本文档说明当前画布在前端本地保存的数据结构、图片等媒体文件的存储和清理方式。
 
 ## 当前存储位置
 
-当前画布项目主要保存在浏览器本地：
+画布项目主要保存在浏览器本地（localforage / IndexedDB，数据库名沿用 `infinite-canvas`）：
 
-- 画布项目 JSON：`localForage`，数据库名 `infinite-canvas`，storeName `app_state`，key 为 `infinite-canvas:canvas_store`。
-- 我的素材 JSON：`localForage`，数据库名 `infinite-canvas`，storeName `app_state`，key 为 `infinite-canvas:asset_store`。
-- 图片 Blob：单独存到 `localForage` 实例，数据库名 `infinite-canvas`，storeName `image_files`。
-- 视频等媒体 Blob：单独存到 `localForage` 实例，数据库名 `infinite-canvas`，storeName `media_files`。
+- 画布项目 JSON：storeName `app_state`，key `infinite-canvas:canvas_store`。
+- 我的素材 JSON：storeName `app_state`，key `infinite-canvas:asset_store`。
+- 图片 Blob：单独 localforage 实例，storeName `image_files`（`services/image-storage.ts`）。
+- 视频等媒体 Blob：单独 localforage 实例，storeName `media_files`（`services/file-storage.ts`）。
 
-画布 JSON 不直接长期保存大体积 base64 图片或视频。图片节点、视频节点、助手图片和素材媒体只保存展示 URL、`storageKey` 和元信息，真实 Blob 通过 `storageKey` 读取。
+画布 JSON 不直接长期保存大体积 base64 图片或视频。图片节点、视频节点、助手图片和素材媒体只保存展示 URL、`storageKey` 和元信息，真实 Blob 通过 `storageKey` 读取。配置了腾讯云 COS 时，媒体另行进入本地优先上传队列同步到 COS，COS 地址由 `use-cos-upload-store` 唯一映射。
 
 ## 画布项目结构
 
-每个画布项目是一个 `CanvasProject`：
+每个画布项目是一个 `CanvasProject`（`stores/canvas/use-canvas-store.ts`）：
 
 ```ts
 type CanvasProject = {
-  id: string;
-  title: string;
-  createdAt: string;
-  updatedAt: string;
-  nodes: CanvasNodeData[];
-  connections: CanvasConnection[];
-  chatSessions: CanvasAssistantSession[];
-  activeChatId: string | null;
-  backgroundMode: "lines" | "dots" | "blank";
-  viewport: { x: number; y: number; k: number };
+    id: string;
+    title: string;
+    createdAt: string;
+    updatedAt: string;
+    nodes: CanvasNodeData[];
+    connections: CanvasConnection[];
+    chatSessions: CanvasAssistantSession[];
+    activeChatId: string | null;
+    backgroundMode: CanvasBackgroundMode; // "lines" | "dots" | "blank"
+    showImageInfo: boolean;
+    viewport: { x: number; y: number; k: number };
 };
 ```
 
 字段说明：
 
-- `id`：画布项目 ID，当前前端生成。
+- `id`：画布项目 ID，前端生成。
 - `title`：画布名称。
 - `createdAt` / `updatedAt`：ISO 字符串。
-- `nodes`：画布节点列表。
-- `connections`：节点连线列表。
-- `chatSessions`：右侧画布助手会话。
-- `activeChatId`：当前选中的助手会话 ID。
+- `nodes` / `connections`：节点与连线列表。
+- `chatSessions` / `activeChatId`：侧栏助手会话及当前会话。
 - `backgroundMode`：画布背景模式。
+- `showImageInfo`：是否在图片节点上显示信息。
 - `viewport`：视口变换，`x/y` 是屏幕平移，`k` 是缩放比例。
 
 ## 节点结构
 
-每个节点是一个 `CanvasNodeData`：
+每个节点是一个 `CanvasNodeData`（`types/canvas.ts`）：
 
 ```ts
+enum CanvasNodeType {
+    Image = "image",
+    Text = "text",
+    Config = "config",
+    Video = "video",
+    Audio = "audio",
+    Group = "group",
+}
+
 type CanvasNodeData = {
-  id: string;
-  type: "image" | "text" | "config" | "video";
-  title: string;
-  position: { x: number; y: number };
-  width: number;
-  height: number;
-  metadata?: CanvasNodeMetadata;
+    id: string;
+    type: CanvasNodeType;
+    title: string;
+    position: { x: number; y: number };
+    width: number;
+    height: number;
+    metadata?: CanvasNodeMetadata;
 };
 ```
 
 通用字段：
 
 - `id`：节点 ID。
-- `type`：节点类型，当前有图片、文本、生成配置、视频四类。
-- `title`：节点标题。
+- `type`：节点类型，共六类：图片、文本、生成配置、视频、音频、组。
+- `title`：节点名称，默认显示在节点上方，双击可编辑。
 - `position`：画布世界坐标，不是屏幕坐标。
 - `width` / `height`：画布世界坐标下的节点尺寸。
 - `metadata`：节点内容和业务状态。
 
-`metadata` 当前常用字段：
+`metadata` 字段按用途分组（完整定义见 `types/canvas.ts` 的 `CanvasNodeMetadata`）：
 
-```ts
-type CanvasNodeMetadata = {
-  content?: string;
-  prompt?: string;
-  status?: "idle" | "success" | "loading" | "error";
-  errorDetails?: string;
-  fontSize?: number;
-  generationMode?: "text" | "image" | "video";
-  model?: string;
-  size?: string;
-  count?: number;
-  naturalWidth?: number;
-  naturalHeight?: number;
-  freeResize?: boolean;
-  isBatchRoot?: boolean;
-  batchRootId?: string;
-  batchChildIds?: string[];
-  primaryImageId?: string;
-  imageBatchExpanded?: boolean;
-  inputOrder?: string[];
-  storageKey?: string;
-  mimeType?: string;
-  bytes?: number;
-};
-```
+- **内容与状态**：`content`（展示内容 / URL）、`composerContent`、`prompt`、`status`（`idle/success/loading/error`）、`errorDetails`、`fontSize`。
+- **生成配置**：`generationMode`（`text/image/video/audio`）、`generationType`（`generation/edit`）、`model`、`size`、`quality`、`count`、`seconds`、`vquality`、`generateAudio`、`watermark`、`audioVoice`、`audioFormat`、`audioSpeed`、`audioInstructions` 等。
+- **参考图**：`references`（参考图引用）、`referencePurpose`（`style/composition/color/material`）。
+- **局部重绘**：`maskDataUrl`、`maskRect`、`maskFeatherRadius`、`maskRatio`、`maskSelectionMode`（`brush/rectangle`）。
+- **媒体信息**：`storageKey`、`mimeType`、`bytes`、`naturalWidth`、`naturalHeight`、`durationMs`、`freeResize`、`panoramaProjection`。
+- **图片组**：`isBatchRoot`、`batchRootId`、`batchChildIds`、`batchUsesReferenceImages`、`primaryImageId`、`imageBatchExpanded`。
+- **分组与任务**：`groupId`（所属组节点）、`workflowTaskId`、`workflowType`、`workflowResultIndex`、`agentTemplateId`（文档智能体模板）。
 
 不同节点的使用方式：
 
-- 图片节点：`content` 是当前可展示的图片 URL，通常是 `blob:` URL；`storageKey` 指向本地图片 Blob；`naturalWidth/naturalHeight/bytes/mimeType` 保存原图信息。
-- 视频节点：`content` 是当前可播放的视频 URL，通常是 `blob:` URL；`storageKey` 指向本地视频 Blob；`bytes/mimeType` 保存文件信息。
+- 图片节点：`content` 是当前可展示的图片 URL（通常是 `blob:` URL）；`storageKey` 指向本地图片 Blob；`naturalWidth/naturalHeight/bytes/mimeType` 保存原图信息。
+- 视频 / 音频节点：`content` 是当前可播放的媒体 URL；`storageKey` 指向 `media_files` 中的 Blob。
 - 文本节点：`content` 保存文本内容；`fontSize` 保存字体大小；`prompt/status/errorDetails` 保存生成状态。
-- 生成配置节点：`generationMode/model/size/count/inputOrder` 保存生成配置；`generationMode` 可选择文本、图片或视频；上游输入通过 `connections` 计算。
+- 生成配置节点：`generationMode/model/size/count` 等保存生成配置；上游输入通过 `connections` 计算。
 - 图片组节点：根节点用 `isBatchRoot/batchChildIds/primaryImageId/imageBatchExpanded` 记录批量生成结果；子图节点用 `batchRootId` 指回根节点。
+- 组节点：子节点通过 `metadata.groupId` 记录归属，拖动组节点整体移动子节点。
 
 ## 连线结构
 
@@ -116,9 +108,9 @@ type CanvasNodeMetadata = {
 
 ```ts
 type CanvasConnection = {
-  id: string;
-  fromNodeId: string;
-  toNodeId: string;
+    id: string;
+    fromNodeId: string;
+    toNodeId: string;
 };
 ```
 
@@ -128,41 +120,33 @@ type CanvasConnection = {
 
 ## 助手会话结构
 
-助手会话保存在画布项目内：
+侧栏助手会话保存在画布项目内：
 
 ```ts
 type CanvasAssistantSession = {
-  id: string;
-  title: string;
-  messages: CanvasAssistantMessage[];
-  createdAt: string;
-  updatedAt: string;
+    id: string;
+    title: string;
+    messages: CanvasAssistantMessage[];
+    createdAt: string;
+    updatedAt: string;
 };
-```
 
-消息结构：
-
-```ts
 type CanvasAssistantMessage = {
-  id: string;
-  role: "user" | "assistant";
-  mode: "ask" | "image";
-  text: string;
-  isLoading?: boolean;
-  references?: CanvasAssistantReference[];
-  images?: CanvasAssistantImage[];
+    id: string;
+    role: "user" | "assistant" | "system" | "tool" | "error";
+    title?: string;
+    text: string;
+    meta?: string;
+    detail?: unknown;
+    references?: CanvasAssistantReference[];
 };
 ```
 
-图片引用和助手生成图片也遵循同一套图片存储规则：
-
-- `dataUrl` 字段当前可能是 `blob:` URL，也可能是旧数据中的 `data:image/...`。
-- `storageKey` 存在时，以 `storageKey` 为准读取图片 Blob。
-- 发送到 AI 接口前，如果接口需要 base64，会通过 `imageToDataUrl` 临时把 Blob URL 转成 data URL。
+`role` 覆盖本地 Codex 链路的结构化事件：普通消息之外还有工具调用（`tool`）与错误（`error`）。引用节点（`CanvasAssistantReference`）遵循同一套媒体存储规则：`storageKey` 存在时以它为准读取 Blob；发送到 AI 接口需要 base64 时，通过 `imageToDataUrl` 临时转换。
 
 ## 图片写入流程
 
-所有新增图片应通过 `uploadImage(input)` 写入：
+所有新增图片应通过 `uploadImage(input)`（`services/image-storage.ts`）写入：
 
 1. 传入 `Blob` 或 data URL。
 2. 内部转成 `Blob`。
@@ -173,28 +157,16 @@ type CanvasAssistantMessage = {
 
 ```ts
 type UploadedImage = {
-  url: string;
-  storageKey: string;
-  width: number;
-  height: number;
-  bytes: number;
-  mimeType: string;
+    url: string;
+    storageKey: string;
+    width: number;
+    height: number;
+    bytes: number;
+    mimeType: string;
 };
 ```
 
-图片节点会通过 `imageMetadata(image)` 写入：
-
-```ts
-{
-  content: image.url,
-  storageKey: image.storageKey,
-  status: "success",
-  naturalWidth: image.width,
-  naturalHeight: image.height,
-  bytes: image.bytes,
-  mimeType: image.mimeType
-}
-```
+图片节点会通过 `imageMetadata(image)` 写入 `content/storageKey/status/naturalWidth/naturalHeight/bytes/mimeType`。
 
 因此，`content` 只适合当前浏览器会话展示，不能作为长期文件标识；长期标识是 `storageKey`。
 
@@ -204,16 +176,18 @@ type UploadedImage = {
 
 - 如果图片节点有 `storageKey`，通过 `resolveImageUrl(storageKey, fallback)` 读取 Blob 并生成新的 `blob:` URL。
 - 如果图片节点没有 `storageKey`，但 `content` 是旧的 `data:image/...`，会调用 `uploadImage(content)` 迁移到 `image_files`，并补上 `storageKey`。
-- 助手消息里的引用图和生成图也会执行同类逻辑。
+- 助手消息里的引用图也会执行同类逻辑。
 
 我的素材读取时也会做迁移：
 
 - 有 `storageKey`：恢复 `coverUrl` 和 `data.dataUrl` 的可展示 URL。
 - 无 `storageKey` 且保存了 base64：写入 `image_files`，然后更新素材里的 `storageKey`。
 
+> 注意：项目尚未上线，按 `AGENTS.md` 约定，存储结构调整时直接按新设计修改，不写旧数据迁移兜底；以上补水逻辑是既有实现，新改动不必效仿。
+
 ## 图片移除和清理
 
-图片不是在删除节点时立即按节点逐张删除，而是做引用清理：
+图片不是在删除节点时立即按节点逐张删除，而是做引用清理（`services/image-storage.ts` 的 `cleanupImages`）：
 
 1. 删除节点、清空画布、删除画布、删除素材、删除助手会话时，会触发 `cleanupImages`。
 2. `cleanupImages` 会收集当前仍被画布项目、素材和额外传入数据引用的所有 `storageKey`。

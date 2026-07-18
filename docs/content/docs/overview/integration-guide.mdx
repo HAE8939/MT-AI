@@ -1,0 +1,245 @@
+---
+title: 接入项目方案
+description: 部署、配置和集成 MT-AI 的推荐方案
+date: 2026-07-18
+---
+
+# 接入项目方案
+
+本方案面向想要**部署并使用 MT-AI** 的团队或个人，涵盖部署选择、渠道配置、本地 Agent 接入和团队配置下发。
+
+## 一、快速体验（5 分钟）
+
+**目标**：最快看到效果，验证基本功能。
+
+### 1.1 本地启动
+
+```bash
+git clone https://github.com/HAE8939/MT-AI.git
+cd MT-AI/web
+bun install
+bun run dev
+```
+
+访问 `http://localhost:3000`，打开右上角配置弹窗。
+
+### 1.2 配置一个 AI 渠道
+
+**方式一：OpenAI 兼容接口**
+
+填入你的 `Base URL` 和 `API Key`，点击「拉取模型列表」，然后在「模型」tab 设置默认文本模型和图片模型。
+
+**方式二：东木-AI 聚合平台（推荐）**
+
+点击「一键添加东木-AI」，输入你的 API Key，系统自动拉取模型列表和能力分类。
+
+**方式三：火山方舟 Seedance**
+
+- Base URL: `https://ark.cn-beijing.volces.com/api/plan/v3`
+- API Key: 你的火山方舟密钥
+- 模型名手动填写（如 `doubao-seedance-2.0`）
+
+### 1.3 生成第一张图
+
+1. 新建画布，点击工具栏「文本」创建文本节点。
+2. 输入提示词，点击节点工具栏的「生图」。
+3. 在自动创建的生成配置节点里调整模型、比例、数量，查看生成结果。
+
+## 二、正式部署（团队使用）
+
+**目标**：稳定的公网访问 + 团队配置下发。
+
+### 2.1 部署方式选择
+
+| 方式 | 适用场景 | 特点 |
+| --- | --- | --- |
+| **Vercel**（推荐） | 团队日常使用、对外演示 | 自动 HTTPS、全球 CDN、免费额度充足、Git 推送自动部署 |
+| **Render** | 快速验证、临时演示 | 一键部署、免费版 15 分钟空闲后休眠 |
+| **Docker + Nginx** | 内网部署、自托管 | 完全掌控、无外部依赖、需自行维护 |
+| **GitHub Pages** | 开源项目文档站 | 推送 tag 自动发布、免费、仅适合公开项目 |
+
+#### Vercel 部署步骤（推荐）
+
+1. Fork 或导入仓库到你的 GitHub。
+2. 登录 [Vercel](https://vercel.com)，点击「New Project」。
+3. 选择你的仓库，框架预设选 `Other`。
+4. Root Directory 填 `web`，Build Command 填 `bun run build`，Output Directory 填 `dist`。
+5. 部署完成后，Vercel 会分配一个 `.vercel.app` 域名，可绑定自定义域名。
+
+#### Docker 部署步骤
+
+仓库根目录已有 `Dockerfile`（nginx 静态托管）：
+
+```bash
+docker build -t mt-ai .
+docker run -d -p 3000:80 mt-ai
+```
+
+访问 `http://<your-server>:3000`。
+
+### 2.2 团队配置下发
+
+编辑部署产物中的 `web/public/config.json`（Vercel 需在仓库 `web/public/config.json` 改完后重新部署），所有打开站点的设备会自动同步该配置。
+
+**示例配置**：
+
+```json
+{
+  "channels": [
+    {
+      "id": "team-dongmu",
+      "name": "团队东木-AI",
+      "baseUrl": "https://api.dongmu.ai",
+      "apiKey": "",
+      "format": "openai",
+      "models": ["gpt-4o", "dall-e-3"]
+    }
+  ],
+  "defaultModels": {
+    "text": "team-dongmu::gpt-4o",
+    "image": "team-dongmu::dall-e-3"
+  },
+  "cosConfig": {
+    "secretId": "YOUR_SECRET_ID",
+    "secretKey": "YOUR_SECRET_KEY",
+    "bucket": "your-bucket-name",
+    "region": "ap-guangzhou",
+    "publicDomain": "https://your-bucket.cos.ap-guangzhou.myqcloud.com",
+    "pathPrefix": "mt-ai/"
+  },
+  "runninghub": {
+    "baseUrl": "https://www.runninghub.ai",
+    "apiKey": ""
+  }
+}
+```
+
+**注意事项**：
+
+- `config.json` 是公开可下载的静态文件，写入其中的 Key 对所有访问者可见，只适合内网或可信团队环境。
+- 个人使用建议 API Key 留空，让用户在配置页手动填写。
+- COS 建议使用 CAM 子账号，最小权限原则（PutObject / GetObject / DeleteObject，单桶单前缀）。
+
+### 2.3 媒体文件同步（可选）
+
+配置腾讯云 COS 后，画布生成结果、上传素材会自动进入本地优先上传队列，跨设备通过 COS 直链访问。
+
+**配置位置**：右上角配置弹窗 → 腾讯云 COS tab。
+
+**字段说明**：
+
+- SecretId / SecretKey：腾讯云 API 密钥。
+- Bucket / Region：COS 桶名和地域。
+- 公网访问域名：COS 桶的默认域名或 CDN 加速域名。
+- 对象前缀：媒体文件的统一前缀（如 `mt-ai/`）。
+
+上传失败会自动重试 3 次，顶部同步中心可查看状态并手动重试。
+
+## 三、本地 Agent 接入（AI 操作画布）
+
+**目标**：让 Codex / Claude Code 通过 Canvas Agent 连接网页，用自然语言操作画布。
+
+### 3.1 启动 Canvas Agent
+
+```bash
+cd canvas-agent
+npm install
+npx tsc -p tsconfig.json
+node dist/index.js
+```
+
+Agent 默认监听 `http://127.0.0.1:17371`。
+
+Windows 用户可双击仓库根目录的 `start-all.bat`，同时拉起 Agent 与前端。
+
+### 3.2 网页侧连接
+
+打开配置弹窗 → Codex tab，确认地址和 Connect token，点击「连接」。连接成功后：
+
+- 画布侧栏「对话」tab 切换到 Codex 引擎，可直接操作画布。
+- Codex / Claude Code 中使用 MCP 工具读取画布、创建节点、触发生成。
+
+### 3.3 Codex App 插件（推荐）
+
+将 MT-AI 注册为 Codex 插件后，Codex 自动识别技能和 MCP 工具：
+
+```bash
+mkdir -p ~/plugins
+git clone https://github.com/HAE8939/MT-AI.git ~/plugins/MT-AI
+cd /path/to/MT-AI
+codex plugin marketplace add "$(pwd)"
+```
+
+重启 Codex，在技能列表中找到 `mt-ai:*` 技能。详见 [Codex App 插件](/docs/overview/codex-app-plugin)。
+
+### 3.4 能力范围
+
+Codex 连接后可以：
+
+- 读取当前画布、选区、节点内容。
+- 创建文本、图片、视频、音频、生成配置节点。
+- 修改节点、移动节点、连接节点、触发生成。
+- 搜索提示词库、添加素材。
+
+完整清单见 [Codex 能力清单](/docs/overview/codex-capabilities)。
+
+## 四、推荐工作流
+
+### 4.1 个人创作
+
+1. **本地启动** → 配置自己的 API Key → 在画布上创作。
+2. 提示词用侧栏「提示词」tab 的组合模板点选生成，或从灵感广场复制。
+3. 生成结果可继续图生图、局部重绘、裁剪、标注。
+4. 跑通的多步流程保存为工作流模板，下次换输入重跑。
+
+### 4.2 团队协作
+
+1. **Vercel 部署** → 编辑 `web/public/config.json` 下发团队渠道与 COS。
+2. 团队成员打开部署地址，自动同步配置，无需手动填 Key。
+3. COS 同步媒体文件，跨设备访问生成结果。
+4. 画布项目导出为 zip，发给协作者导入继续编辑。
+
+### 4.3 AI Agent 驱动
+
+1. 启动本地 Canvas Agent，网页侧连接。
+2. 在 Codex / Claude Code 中用自然语言描述任务："创建 5 个室内效果图生成流程，连接我的参考图，然后批量生成"。
+3. Agent 自动创建节点、连线、触发生成，结果写回画布。
+4. 画布侧栏「对话」tab 切换到 Codex，直接在画布旁边与 AI 对话。
+
+## 五、常见问题
+
+### 5.1 数据保存在哪里？
+
+- 画布、提示词、素材、生成记录保存在**浏览器本地**（IndexedDB）。
+- 媒体文件可选配置腾讯云 COS 同步，跨设备通过 COS 直链访问。
+- API Key 保存在浏览器本地，由浏览器直连所配置的接口，不经过任何中转。
+
+### 5.2 如何跨设备使用？
+
+- **方式一**：配置腾讯云 COS，媒体文件自动同步；画布项目导出 zip，在另一设备导入。
+- **方式二**：团队部署 + config.json 下发配置，每台设备打开同一部署地址，媒体走 COS。
+
+### 5.3 支持哪些 AI 接口？
+
+- OpenAI 兼容接口（`/v1/chat/completions`、`/v1/images/generations` 等）。
+- Gemini 调用格式（`/v1beta/models` 系列）。
+- 东木-AI 聚合平台（自动发现模型与能力）。
+- 火山方舟 Seedance（视频生成）。
+- RunningHub 云工作流（ComfyUI 级管线）。
+
+### 5.4 Canvas Agent 必须启动吗？
+
+不是必须。Canvas Agent 只在需要 Codex / Claude Code 操作画布时启动，纯网页生成不依赖它。
+
+### 5.5 如何更新版本？
+
+- **本地开发**：`git pull` 后 `bun install`、`bun run dev`。
+- **Vercel**：推送新代码到仓库，Vercel 自动重新部署。
+- **Docker**：重新 `docker build` 并替换容器。
+
+## 六、下一步
+
+- 阅读 [功能介绍](/docs/overview/features) 了解所有模块。
+- 阅读 [画布节点操作手册](/docs/canvas/canvas-node-manual) 掌握六类节点用法。
+- 阅读 [工作流使用指南](/docs/canvas/workflows-guide) 了解三种工作流来源。
+- 查看 [更新日志](/docs/progress/changelog) 跟踪最新变更。
