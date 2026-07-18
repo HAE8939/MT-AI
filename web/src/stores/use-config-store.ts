@@ -72,8 +72,18 @@ const CHANNEL_MODEL_SEPARATOR = "::";
 const OPENAI_BASE_URL = "https://api.openai.com";
 const GEMINI_BASE_URL = "https://generativelanguage.googleapis.com";
 
-/** 项目配置文件（public/config.json）中可覆盖的字段 */
-type ProjectConfigJson = Partial<AiConfig>;
+/** 项目配置文件（public/config.json）中可覆盖的字段。
+ *  除 AiConfig 外，还支持管理员级下发腾讯云 COS 与 RunningHub 平台配置。 */
+type ProjectConfigJson = Partial<AiConfig> & {
+    cosConfig?: Partial<CosConfig>;
+    runninghub?: Partial<RunningHubConfig>;
+};
+
+/** 拆出 config.json 中的 COS / RunningHub 段，避免它们混入 AiConfig */
+function splitProjectConfig(projectConfig: ProjectConfigJson | null) {
+    const { cosConfig, runninghub, ...aiConfig } = projectConfig || {};
+    return { cosConfig: cosConfig || {}, runninghub: runninghub || {}, aiConfig };
+}
 const CONFIG_HASH_KEY = "infinite-canvas:config_json_hash";
 
 /** 简单字符串哈希，用于检测 config.json 内容是否变更 */
@@ -301,14 +311,15 @@ export const useConfigStore = create<ConfigStore>()(
                 const persistedState = (persisted || {}) as Partial<ConfigStore>;
                 const persistedConfig = (persistedState.config || {}) as Partial<AiConfig>;
                 const persistedCosConfig = persistedState.cosConfig || {};
-                const baseConfig = loadedProjectConfig ? { ...defaultConfig, ...loadedProjectConfig } : defaultConfig;
-                const persistedRunningHub = { ...defaultRunningHubConfig, ...(persistedState.runninghub || {}) };
+                const project = splitProjectConfig(loadedProjectConfig);
+                const baseConfig = loadedProjectConfig ? { ...defaultConfig, ...project.aiConfig } : defaultConfig;
+                const persistedRunningHub = { ...defaultRunningHubConfig, ...project.runninghub, ...(persistedState.runninghub || {}) };
                 // RunningHub CN 站因政策变动停用，历史配置中的旧默认地址自动切换到国际站
                 if (persistedRunningHub.baseUrl === "https://www.runninghub.cn") persistedRunningHub.baseUrl = defaultRunningHubConfig.baseUrl;
                 return {
                     ...current,
                     initialized: false,
-                    cosConfig: { ...defaultCosConfig, ...persistedCosConfig },
+                    cosConfig: { ...defaultCosConfig, ...project.cosConfig, ...persistedCosConfig },
                     runninghub: persistedRunningHub,
                     config: normalizeConfig(baseConfig, persistedConfig),
                 };
@@ -317,19 +328,22 @@ export const useConfigStore = create<ConfigStore>()(
                 void (async () => {
                     const projectConfig = await fetchProjectConfig();
                     loadedProjectConfig = projectConfig;
+                    const project = splitProjectConfig(projectConfig);
                     const rawHash = simpleHash(JSON.stringify(projectConfig));
                     const storedHash = window.localStorage.getItem(CONFIG_HASH_KEY);
-                    const baseConfig = { ...defaultConfig, ...projectConfig };
+                    const baseConfig = { ...defaultConfig, ...project.aiConfig };
 
                     // Extract user channels that were persisted (already filtered by partialize)
                     const persistedRaw = window.localStorage.getItem(CONFIG_STORE_KEY);
                     let persistedChannels: ModelChannel[] = [];
+                    let persistedModelPrefs: Partial<AiConfig> = {};
                     if (persistedRaw) {
                         try {
                             const parsed = JSON.parse(persistedRaw);
                             if (Array.isArray(parsed?.state?.config?.channels)) {
                                 persistedChannels = parsed.state.config.channels;
                             }
+                            if (parsed?.state?.config) persistedModelPrefs = parsed.state.config as Partial<AiConfig>;
                         } catch {
                             // ignore parse errors
                         }
@@ -339,17 +353,50 @@ export const useConfigStore = create<ConfigStore>()(
                         // config.json changed — overwrite non-channel config, merge channels
                         const adminConfig = normalizeConfig(baseConfig, {});
                         const mergedChannels = [...adminConfig.channels, ...persistedChannels];
+                        const state = useConfigStore.getState();
                         useConfigStore.setState({
                             config: { ...adminConfig, channels: mergedChannels },
+                            // config.json 中给出的 COS / RunningHub 字段以管理员值为准，未给出的字段保留设备本地值
+                            cosConfig: { ...state.cosConfig, ...project.cosConfig },
+                            runninghub: { ...state.runninghub, ...project.runninghub },
                             initialized: true,
                         });
                         window.localStorage.setItem(CONFIG_HASH_KEY, rawHash);
                     } else {
                         // config.json unchanged — ensure admin channels are fresh, keep user overrides
                         const currentState = useConfigStore.getState();
-                        const mergedChannels = [...normalizeConfig(baseConfig, {}).channels, ...persistedChannels];
+                        const adminConfig = normalizeConfig(baseConfig, {});
+                        const mergedChannels = [...adminConfig.channels, ...persistedChannels];
+                        // 启动合并时管理员渠道尚未加载，针对它们的模型选择会被归一化清空；
+                        // 这里渠道齐了再恢复：优先持久化的用户选择，其次当前值，均无效则回退管理员默认值
+                        const pickModel = (persisted: string | undefined, current: string, adminDefault: string) => {
+                            for (const candidate of [persisted, current]) {
+                                const normalized = normalizeModelOptionValue(candidate, mergedChannels);
+                                if (normalized && isChannelModelValue(normalized)) return normalized;
+                            }
+                            return adminDefault;
+                        };
+                        const pickModelList = (persisted: string[] | undefined, adminDefault: string[]) => {
+                            const normalized = normalizeModelList(persisted || [], mergedChannels);
+                            return normalized.length ? normalized : adminDefault;
+                        };
+                        const cur = currentState.config;
+                        const pm = persistedModelPrefs;
                         useConfigStore.setState({
-                            config: { ...currentState.config, channels: mergedChannels },
+                            config: {
+                                ...cur,
+                                channels: mergedChannels,
+                                models: modelOptionsFromChannels(mergedChannels),
+                                model: pickModel(pm.model, cur.model, adminConfig.model),
+                                imageModel: pickModel(pm.imageModel, cur.imageModel, adminConfig.imageModel),
+                                videoModel: pickModel(pm.videoModel, cur.videoModel, adminConfig.videoModel),
+                                textModel: pickModel(pm.textModel, cur.textModel, adminConfig.textModel),
+                                audioModel: pickModel(pm.audioModel, cur.audioModel, adminConfig.audioModel),
+                                imageModels: pickModelList(pm.imageModels, adminConfig.imageModels),
+                                videoModels: pickModelList(pm.videoModels, adminConfig.videoModels),
+                                textModels: pickModelList(pm.textModels, adminConfig.textModels),
+                                audioModels: pickModelList(pm.audioModels, adminConfig.audioModels),
+                            },
                             initialized: true,
                         });
                     }
