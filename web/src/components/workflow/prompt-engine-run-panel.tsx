@@ -1,7 +1,9 @@
+import { useState } from "react";
 import { App, Button, Input, Select, Tag, Tooltip, Upload } from "antd";
-import { ArrowLeft, ImagePlus, Play, Sparkles, X } from "lucide-react";
+import { ArrowLeft, ImagePlus, Paintbrush, Play, Sparkles, Trash2, X } from "lucide-react";
 
 import { canvasThemes } from "@/lib/canvas-theme";
+import { CanvasNodeMaskEditDialog } from "@/components/canvas/canvas-node-mask-edit-dialog";
 import { usePromptEngineRun } from "@/components/workflow/use-prompt-engine-run";
 import type { AgentTemplate } from "@/types/workflow";
 
@@ -46,17 +48,47 @@ function ImageSlot({ label, previewSrc, theme, onFile, onClear, message }: { lab
     );
 }
 
+function MaskSlot({ sourceSrc, previewSrc, theme, onEdit, onClear }: { sourceSrc?: string; previewSrc?: string; theme: Theme; onEdit: () => void; onClear: () => void }) {
+    const disabled = !sourceSrc;
+    return (
+        <div className="space-y-2">
+            <div className="text-xs font-medium" style={{ color: theme.node.text }}>蒙版（可选）</div>
+            <button
+                type="button"
+                disabled={disabled}
+                className="relative grid h-28 w-full overflow-hidden rounded-md border border-dashed transition-opacity disabled:cursor-not-allowed disabled:opacity-50"
+                style={{ borderColor: theme.node.stroke, color: theme.node.muted, background: theme.toolbar.panel }}
+                onClick={onEdit}
+            >
+                {sourceSrc ? <img src={sourceSrc} alt="原图" className="absolute inset-0 size-full object-cover" /> : null}
+                {previewSrc ? <img src={previewSrc} alt="蒙版预览" className="absolute inset-0 size-full object-cover" /> : null}
+                <span className="relative z-10 m-auto inline-flex items-center gap-1.5 rounded bg-black/55 px-2 py-1 text-xs text-white">
+                    <Paintbrush className="size-3.5" />
+                    {disabled ? "请先上传原图" : previewSrc ? "重新绘制" : "点击绘制蒙版"}
+                </span>
+            </button>
+            <div className="flex items-center justify-between gap-2">
+                <span className="text-[11px]" style={{ color: theme.node.muted }}>{previewSrc ? "已绘制修改区域" : "可跳过，直接按整图编辑"}</span>
+                {previewSrc ? <Button type="text" size="small" danger icon={<Trash2 className="size-3.5" />} onClick={onClear}>清除</Button> : null}
+            </div>
+        </div>
+    );
+}
+
 export function PromptEngineRunPanel({ template, theme, onBack }: { template: AgentTemplate; theme: Theme; onBack: () => void }) {
     const { message } = App.useApp();
+    const [maskEditorOpen, setMaskEditorOpen] = useState(false);
     const {
         config,
         sourceImage,
         sourceFromCanvas,
-        setSourceFromCanvas,
+        selectSourceFromCanvas,
         pickSourceFile,
-        maskImage,
-        pickMaskFile,
-        setMaskImage,
+        clearSource,
+        maskDataUrl,
+        maskPreviewDataUrl,
+        saveMask,
+        clearMask,
         refImages,
         addReferenceFile,
         removeReference,
@@ -78,6 +110,8 @@ export function PromptEngineRunPanel({ template, theme, onBack }: { template: Ag
     const needMask = config.inputSpec.mask !== "none";
     const maxRefs = config.inputSpec.refImages || 0;
     const needText = config.inputSpec.userText !== "none";
+    const sourcePreview = sourceImage?.previewUrl || sourceFromCanvas || undefined;
+    const sourceForMaskEditor = sourceImage?.dataUrl || sourceFromCanvas;
 
     return (
         <div className="flex min-h-full flex-col gap-3">
@@ -92,7 +126,7 @@ export function PromptEngineRunPanel({ template, theme, onBack }: { template: Ag
             <div className="flex-1 space-y-4">
                 {needImage ? (
                     <div className="space-y-2">
-                        <ImageSlot label={`原图${config.inputSpec.image === "optional" ? "（可选）" : ""}`} previewSrc={sourceImage?.previewUrl || sourceFromCanvas || undefined} theme={theme} onFile={(file) => void pickSourceFile(file)} message={message} />
+                        <ImageSlot label={`原图${config.inputSpec.image === "optional" ? "（可选）" : ""}`} previewSrc={sourcePreview} theme={theme} onFile={(file) => void pickSourceFile(file)} onClear={sourcePreview ? clearSource : undefined} message={message} />
                         <Select
                             className="w-full"
                             size="small"
@@ -100,20 +134,13 @@ export function PromptEngineRunPanel({ template, theme, onBack }: { template: Ag
                             placeholder={canvasImageOptions.length ? "或选画布图片" : "画布上还没有图片"}
                             options={canvasImageOptions}
                             value={!sourceImage && sourceFromCanvas ? sourceFromCanvas : undefined}
-                            onChange={(value) => setSourceFromCanvas(value || "")}
+                            onChange={(value) => selectSourceFromCanvas(value || "")}
                         />
                     </div>
                 ) : null}
 
                 {needMask ? (
-                    <ImageSlot
-                        label={`蒙版${config.inputSpec.mask === "optional" ? "（可选）" : ""} · 涂抹处 = 修改区`}
-                        previewSrc={maskImage?.previewUrl}
-                        theme={theme}
-                        onFile={(file) => void pickMaskFile(file)}
-                        onClear={() => setMaskImage(null)}
-                        message={message}
-                    />
+                    <MaskSlot sourceSrc={sourcePreview} previewSrc={maskPreviewDataUrl || undefined} theme={theme} onEdit={() => setMaskEditorOpen(true)} onClear={clearMask} />
                 ) : null}
 
                 {maxRefs > 0 ? (
@@ -189,6 +216,20 @@ export function PromptEngineRunPanel({ template, theme, onBack }: { template: Ag
                     <div className="rounded-md px-2 py-1.5 text-xs leading-5" style={{ color: "#f5222d", border: `1px solid ${theme.node.stroke}` }}>{lastError}</div>
                 ) : null}
             </div>
+
+            {needMask ? (
+                <CanvasNodeMaskEditDialog
+                    dataUrl={sourceForMaskEditor}
+                    initialMaskDataUrl={maskDataUrl || undefined}
+                    mode="workflow-mask"
+                    open={maskEditorOpen}
+                    onClose={() => setMaskEditorOpen(false)}
+                    onConfirm={(payload) => {
+                        saveMask(payload.maskDataUrl, payload.maskPreviewDataUrl);
+                        setMaskEditorOpen(false);
+                    }}
+                />
+            ) : null}
         </div>
     );
 }

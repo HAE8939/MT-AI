@@ -2,7 +2,7 @@
   "meta": {
     "id": "scene-add-person",
     "version": "2.2",
-    "name": "GPT-IMAGE 场景添加人物提示词引擎配置",
+    "name": "场景添加人物",
     "description": "用户上传场景图并涂抹蒙版指定位置，输入简单描述，由 LLM 参考本配置扩写为高质量英文编辑提示词，驱动 gpt-image-1 蒙版局部重绘，在场景中自然地加入人物。",
     "taskType": "masked-edit",
     "targetModel": "gpt-image-1",
@@ -14,7 +14,7 @@
   },
   "inputSpec": {
     "image": "required",
-    "mask": "required",
+    "mask": "optional",
     "refImages": 0,
     "userText": "required",
     "extraFields": []

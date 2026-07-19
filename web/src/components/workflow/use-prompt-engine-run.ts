@@ -6,6 +6,7 @@ import { useConfigStore } from "@/stores/use-config-store";
 import { uploadImage } from "@/services/image-storage";
 import { runPromptEngineWorkflow, validateRunInput } from "@/services/prompt-engine/workflow-runner";
 import { CanvasNodeType } from "@/types/canvas";
+import { changeWorkflowMaskSource, clearWorkflowMask, emptyWorkflowMaskState, saveWorkflowMask } from "@/lib/workflow-mask-state";
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
 import type { AgentTemplate, PromptEngineSpec } from "@/types/workflow";
 
@@ -43,7 +44,7 @@ export function usePromptEngineRun(template: AgentTemplate | null) {
 
     const [sourceImage, setSourceImage] = useState<SlotFile | null>(null);
     const [sourceFromCanvas, setSourceFromCanvas] = useState<string>("");
-    const [maskImage, setMaskImage] = useState<SlotFile | null>(null);
+    const [maskState, setMaskState] = useState(emptyWorkflowMaskState);
     const [refImages, setRefImages] = useState<SlotFile[]>([]);
     const [userText, setUserText] = useState("");
     const [extraValues, setExtraValues] = useState<Record<string, string | number>>({});
@@ -58,7 +59,7 @@ export function usePromptEngineRun(template: AgentTemplate | null) {
         revokeRef.current = [];
         setSourceImage(null);
         setSourceFromCanvas("");
-        setMaskImage(null);
+        setMaskState(emptyWorkflowMaskState);
         setRefImages([]);
         setUserText("");
         // 额外表单项回填默认值
@@ -89,19 +90,29 @@ export function usePromptEngineRun(template: AgentTemplate | null) {
 
     const pickSourceFile = async (file: File) => {
         try {
-            setSourceImage(await makeSlotFile(file));
+            const source = await makeSlotFile(file);
+            setSourceImage(source);
             setSourceFromCanvas("");
+            setMaskState((current) => changeWorkflowMaskSource(current, source.previewUrl));
         } catch (error) {
             message.error(error instanceof Error ? error.message : "图片读取失败");
         }
     };
-    const pickMaskFile = async (file: File) => {
-        try {
-            setMaskImage(await makeSlotFile(file));
-        } catch (error) {
-            message.error(error instanceof Error ? error.message : "图片读取失败");
-        }
+
+    const selectSourceFromCanvas = (value: string) => {
+        setSourceImage(null);
+        setSourceFromCanvas(value);
+        setMaskState((current) => changeWorkflowMaskSource(current, value));
     };
+
+    const clearSource = () => {
+        setSourceImage(null);
+        setSourceFromCanvas("");
+        setMaskState(emptyWorkflowMaskState);
+    };
+
+    const saveMask = (maskDataUrl: string, maskPreviewDataUrl: string) => setMaskState((current) => saveWorkflowMask(current, maskDataUrl, maskPreviewDataUrl));
+    const clearMask = () => setMaskState((current) => clearWorkflowMask(current));
 
     const addReferenceFile = async (file: File) => {
         try {
@@ -130,11 +141,11 @@ export function usePromptEngineRun(template: AgentTemplate | null) {
         }
         // 提交前校验所有图片大小（本地图已在 makeSlotFile 时检查，画布图需在解析后检查）
         if (sourceDataUrl) checkDataUrlSize(sourceDataUrl, "原图");
-        if (maskImage?.dataUrl) checkDataUrlSize(maskImage.dataUrl, "蒙版图");
+        if (maskState.maskDataUrl) checkDataUrlSize(maskState.maskDataUrl, "蒙版图");
         refImages.forEach((item, i) => checkDataUrlSize(item.dataUrl, `参考图 ${i + 1}`));
         const input = {
             image: sourceDataUrl || undefined,
-            mask: maskImage?.dataUrl,
+            mask: maskState.maskDataUrl || undefined,
             refImages: refImages.map((item) => item.dataUrl),
             userText: userText.trim() || undefined,
             extraFields: Object.keys(extraValues).length ? extraValues : undefined,
@@ -188,11 +199,13 @@ export function usePromptEngineRun(template: AgentTemplate | null) {
         config,
         sourceImage,
         sourceFromCanvas,
-        setSourceFromCanvas,
+        selectSourceFromCanvas,
         pickSourceFile,
-        maskImage,
-        pickMaskFile,
-        setMaskImage,
+        clearSource,
+        maskDataUrl: maskState.maskDataUrl,
+        maskPreviewDataUrl: maskState.maskPreviewDataUrl,
+        saveMask,
+        clearMask,
         refImages,
         addReferenceFile,
         removeReference,

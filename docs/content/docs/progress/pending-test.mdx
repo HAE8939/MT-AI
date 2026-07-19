@@ -5,6 +5,10 @@ description: 当前版本已实现但仍需人工验证的变更项
 
 # 待测试
 
+- GPT Image 编辑兼容：提示词编辑工作流固定使用自动尺寸；`gpt-image-2` 多图编辑使用官方 `image[]` 字段且不再发送多余的 `response_format`；带蒙版时首张原图统一转为与蒙版一致的 PNG；`gpt-image-1` 比例回退为固定横/竖/方尺寸。回归单测 `bun test src/services/api/image.test.ts src/services/prompt-engine/workflow-runner.test.ts` 已通过；真实 `gpt-image-2（东木-AI）` 渠道已验证「白膜出图」正常生成结果，未再出现 `size` 参数不合法。仍需验证上传 JPEG 后执行局部重绘，接口不再因原图/蒙版格式不同而失败。
+
+- 提示词引擎工作流临时蒙版：所有带蒙版的内置工作流改为先选择原图，再打开编辑器临时涂抹；蒙版始终可选，无蒙版时允许按提示词进行整图编辑。纯逻辑单测覆盖蒙版可选执行、蒙版透传、撤销/重做和切换原图清除旧蒙版；仍需在真实 `gpt-image-2` 渠道验证：① 本地上传原图后绘制蒙版并局部编辑；② 选择画布原图后绘制蒙版并局部编辑；③ 清除蒙版后按提示词整图编辑；④ 切换原图时旧蒙版立即清除且可重新绘制。
+
 - COS 局域网签名兜底：非安全上下文（`http://局域网IP:3000`）下 COS 签名自动降级纯 JS SHA-1/HMAC-SHA1。已全部验证（2026-07-17）：`bun test src/lib/sha1.test.ts`（RFC 3174/2202 标准向量 + 与 WebCrypto 68 项对照）与 `bun run typecheck` 通过，局域网设备实测 COS 配置不再报 importKey 错误。
 
 - 本地自建工作流串跑：画布搭「文生图 → 参考图编辑」两步链（空图输入 → Config1 → 空图占位 → Config2 → 空图占位）→ 工具栏「保存」选「本地工作流」（应识别到空图为图片输入槽）→ 侧栏「工作流」标签进入运行面板填图 → 「立即运行」。已验证（2026-07-17）：`bun run typecheck`、`bun run build`、`bun test src/lib/canvas/local-workflow.test.ts`（9 项纯逻辑）全通过，/workflows 页与画布均无新增运行时错误。仍需人工验证（需配置真实生图渠道）：① 进度条显示「第 1/2 步」「第 2/2 步」，Config1 出图后 Config2 自动以该图为参考出图，最终占位处为成品；② 某步失败时停止后续并提示「第 N 步生成失败」；③ /workflows 页点本地工作流「运行」跳转画布并提示去侧栏运行。

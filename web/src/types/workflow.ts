@@ -79,7 +79,7 @@ export type PromptEngineWorkflowConfig = {
     };
     inputSpec: {
         image: "required" | "optional" | "none";
-        mask: "required" | "optional" | "none";
+        mask: "optional" | "none";
         refImages: number;
         refImagesOptional?: boolean;
         userText: "required" | "optional" | "none";

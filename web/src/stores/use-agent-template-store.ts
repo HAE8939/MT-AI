@@ -27,33 +27,10 @@ function mergeTemplates(builtins: AgentTemplate[], users: AgentTemplate[], edits
     return [...builtins.filter((item) => !deleted.has(item.id)).map((item) => edits[item.id] || item), ...users];
 }
 
-/** 预置的 RunningHub 云工作流模板。fields 为空 = 运行时提交空 nodeInfoList，按工作流默认参数出图 */
-const RUNNINGHUB_BUILTIN_TEMPLATES: AgentTemplate[] = [
-    {
-        id: "builtin-runninghub-hd-upscale",
-        name: "高清放大_4K 8K",
-        description: "基于 SeedVR2 模型的分块高清放大工作流，支持放大至 4K / 8K 超高分辨率，不改变原图细节。上传待放大图片，可调整长边分块数量与分块尺寸。",
-        avatar: "🔍",
-        category: "image",
-        source: "builtin",
-        spec: {
-            kind: "runninghub",
-            workflowId: "1985243172706074625",
-            fields: [
-                { nodeId: "15", fieldName: "image", label: "待放大图片", kind: "image" },
-                { nodeId: "79", fieldName: "Value", label: "长边分块数量", kind: "number", defaultValue: "2" },
-                { nodeId: "96", fieldName: "Value", label: "分块尺寸（px）", kind: "number", defaultValue: "2048" },
-            ],
-        },
-        createdAt: new Date(0).toISOString(),
-        updatedAt: new Date(0).toISOString(),
-    },
-];
-
-/** 内置模板 = 预置云工作流 + 提示词引擎工作流（public/workflows/）+ 原 roles.json 角色转换的文档分析智能体 */
+/** 内置模板 = 提示词引擎工作流（public/workflows/）+ 原 roles.json 角色转换的文档分析智能体 */
 async function loadBuiltinTemplates(): Promise<AgentTemplate[]> {
     const [promptEngine, roles] = await Promise.all([loadPromptEngineTemplates(), loadRoleTemplates()]);
-    return [...RUNNINGHUB_BUILTIN_TEMPLATES, ...promptEngine, ...roles];
+    return [...promptEngine, ...roles];
 }
 
 /** public/workflows/ 下的提示词引擎工作流配置转换为内置模板 */

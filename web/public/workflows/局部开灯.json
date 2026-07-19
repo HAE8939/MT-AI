@@ -13,7 +13,7 @@
   },
   "inputSpec": {
     "image": "required",
-    "mask": "required",
+    "mask": "optional",
     "refImages": 0,
     "userText": "optional",
     "extraFields": []

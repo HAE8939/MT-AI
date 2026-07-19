@@ -1,8 +1,9 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from "react";
 import { Button, Checkbox, Input, Modal, Segmented, Select, Slider } from "antd";
-import { Brush, Eraser, RectangleHorizontal, RotateCcw, WandSparkles, X } from "lucide-react";
+import { Brush, Check, Eraser, RectangleHorizontal, Redo2, RotateCcw, Undo2, WandSparkles, X } from "lucide-react";
 
 import { readImageMeta } from "@/lib/image-utils";
+import { canRedoMaskSnapshot, canUndoMaskSnapshot, createMaskHistory, currentMaskSnapshot, recordMaskSnapshot, redoMaskSnapshot, undoMaskSnapshot, type MaskHistory } from "@/lib/mask-history";
 
 export type CanvasImageMaskRect = {
     x: number;
@@ -14,6 +15,7 @@ export type CanvasImageMaskRect = {
 export type CanvasImageMaskEditPayload = {
     prompt: string;
     maskDataUrl: string;
+    maskPreviewDataUrl: string;
     referenceNodeIds: string[];
     featherRadius: number;
     selectionMode: MaskSelectionMode;
@@ -24,6 +26,7 @@ export type CanvasImageMaskEditPayload = {
 };
 
 type DrawMode = "paint" | "erase";
+type MaskEditorMode = "canvas-edit" | "workflow-mask";
 type MaskSelectionMode = "brush" | "rectangle";
 type MaskRatio = "free" | "1:1" | "16:9" | "9:16";
 type RectangleHandle = "n" | "e" | "s" | "w" | "ne" | "nw" | "se" | "sw";
@@ -35,7 +38,7 @@ const maskBorderColor = "rgba(255, 255, 255, .72)";
 const rectangleHandles: RectangleHandle[] = ["nw", "n", "ne", "e", "se", "s", "sw", "w"];
 const minRectSize = 0.02;
 
-export function CanvasNodeMaskEditDialog({ dataUrl, imageOptions = [], open, onClose, onConfirm }: { dataUrl: string; imageOptions?: Array<{ label: string; value: string }>; open: boolean; onClose: () => void; onConfirm: (payload: CanvasImageMaskEditPayload) => void }) {
+export function CanvasNodeMaskEditDialog({ dataUrl, imageOptions = [], initialMaskDataUrl, mode: editorMode = "canvas-edit", open, onClose, onConfirm }: { dataUrl: string; imageOptions?: Array<{ label: string; value: string }>; initialMaskDataUrl?: string; mode?: MaskEditorMode; open: boolean; onClose: () => void; onConfirm: (payload: CanvasImageMaskEditPayload) => void }) {
     const boxRef = useRef<HTMLDivElement>(null);
     const maskCanvasRef = useRef<HTMLCanvasElement>(null);
     const previewCanvasRef = useRef<HTMLCanvasElement>(null);
@@ -51,6 +54,8 @@ export function CanvasNodeMaskEditDialog({ dataUrl, imageOptions = [], open, onC
     const [saveCompareCrops, setSaveCompareCrops] = useState(false);
     const [referenceNodeIds, setReferenceNodeIds] = useState<string[]>([]);
     const [error, setError] = useState("");
+    const [history, setHistory] = useState<MaskHistory<string> | null>(null);
+    const workflowMask = editorMode === "workflow-mask";
 
     // 归一化高宽比：height_n = width_n * ratioN 时，像素比例等于所选比例
     const ratioN = useMemo(() => maskRatioN(ratio, image), [ratio, image]);
@@ -67,13 +72,25 @@ export function CanvasNodeMaskEditDialog({ dataUrl, imageOptions = [], open, onC
         setSaveCompareCrops(false);
         setReferenceNodeIds([]);
         setError("");
+        setHistory(null);
         void readImageMeta(dataUrl).then(setImage);
     }, [dataUrl, open]);
 
     useEffect(() => {
-        clearCanvas(maskCanvasRef.current);
-        clearCanvas(previewCanvasRef.current);
-    }, [image]);
+        const canvas = maskCanvasRef.current;
+        if (!canvas || !image) return;
+        let cancelled = false;
+        void initializeSelectionCanvas(canvas, initialMaskDataUrl).then(() => {
+            if (cancelled) return;
+            renderMaskPreview(canvas, previewCanvasRef.current, canvasHasPaint(canvas));
+            setHistory(createMaskHistory(canvas.toDataURL("image/png")));
+        }).catch(() => {
+            if (!cancelled) setError("无法读取已有蒙版，请重新绘制");
+        });
+        return () => {
+            cancelled = true;
+        };
+    }, [image, initialMaskDataUrl]);
 
     // 矩形选区同步到蒙版画布
     useEffect(() => {
@@ -190,7 +207,11 @@ export function CanvasNodeMaskEditDialog({ dataUrl, imageOptions = [], open, onC
         if (selectionMode === "rectangle") return;
         drawingRef.current = { active: false, last: null };
         const maskCanvas = maskCanvasRef.current;
-        if (maskCanvas) renderMaskPreview(maskCanvas, previewCanvasRef.current, canvasHasPaint(maskCanvas));
+        if (maskCanvas) {
+            renderMaskPreview(maskCanvas, previewCanvasRef.current, canvasHasPaint(maskCanvas));
+            const snapshot = maskCanvas.toDataURL("image/png");
+            setHistory((current) => (current ? recordMaskSnapshot(current, snapshot) : createMaskHistory(snapshot)));
+        }
     };
 
     const changeSelectionMode = (next: MaskSelectionMode) => {
@@ -204,25 +225,44 @@ export function CanvasNodeMaskEditDialog({ dataUrl, imageOptions = [], open, onC
 
     const resetMask = () => {
         setRect(null);
-        clearCanvas(maskCanvasRef.current);
+        const canvas = maskCanvasRef.current;
+        clearCanvas(canvas);
         clearCanvas(previewCanvasRef.current);
+        if (canvas) {
+            const snapshot = canvas.toDataURL("image/png");
+            setHistory((current) => (current ? recordMaskSnapshot(current, snapshot) : createMaskHistory(snapshot)));
+        }
+        setError("");
+    };
+
+    const restoreHistory = (direction: "undo" | "redo") => {
+        setHistory((current) => {
+            if (!current) return current;
+            const next = direction === "undo" ? undoMaskSnapshot(current) : redoMaskSnapshot(current);
+            void restoreSelectionSnapshot(maskCanvasRef.current, currentMaskSnapshot(next)).then(() => {
+                const canvas = maskCanvasRef.current;
+                if (canvas) renderMaskPreview(canvas, previewCanvasRef.current, canvasHasPaint(canvas));
+            });
+            return next;
+        });
         setError("");
     };
 
     const submit = () => {
         const nextPrompt = prompt.trim();
         const canvas = maskCanvasRef.current;
-        if (!nextPrompt) return setError("请输入修改要求");
+        if (!workflowMask && !nextPrompt) return setError("请输入修改要求");
         if (!canvas) return;
         if (selectionMode === "rectangle" && !rect) return setError("请先框选局部区域");
         if (!canvasHasPaint(canvas)) return setError("请先涂抹局部区域");
         const pixelRect = selectionMode === "rectangle" && rect ? toPixelRect(rect, canvas.width, canvas.height) : undefined;
         if (pixelRect && (pixelRect.width < 16 || pixelRect.height < 16)) return setError("选区太小，请重新框选");
         onConfirm({
-            prompt: nextPrompt,
-            maskDataUrl: buildEditMask(canvas, featherRadius),
+            prompt: workflowMask ? "" : nextPrompt,
+            maskDataUrl: buildEditMask(canvas, workflowMask ? 0 : featherRadius),
+            maskPreviewDataUrl: previewCanvasRef.current?.toDataURL("image/png") || "",
             referenceNodeIds,
-            featherRadius,
+            featherRadius: workflowMask ? 0 : featherRadius,
             selectionMode,
             ratio,
             rect: pixelRect,
@@ -266,14 +306,15 @@ export function CanvasNodeMaskEditDialog({ dataUrl, imageOptions = [], open, onC
 
                 <div className="flex min-h-[360px] flex-col gap-5">
                     <div>
-                        <h2 className="text-xl font-semibold">局部遮罩编辑</h2>
+                        <h2 className="text-xl font-semibold">{workflowMask ? "蒙版编辑器" : "局部遮罩编辑"}</h2>
+                        {workflowMask ? <div className="mt-1 text-sm opacity-60">使用画笔涂抹需要处理的区域</div> : null}
                         <div className="mt-2 text-sm opacity-60">{image ? `${image.width} x ${image.height}px` : "读取中"}</div>
                     </div>
 
-                    <div className="grid grid-cols-2 gap-2">
+                    {!workflowMask ? <div className="grid grid-cols-2 gap-2">
                         <Button type={selectionMode === "brush" ? "primary" : "default"} icon={<Brush className="size-4" />} onClick={() => changeSelectionMode("brush")}>画笔选择</Button>
                         <Button type={selectionMode === "rectangle" ? "primary" : "default"} icon={<RectangleHorizontal className="size-4" />} onClick={() => changeSelectionMode("rectangle")}>矩形选择</Button>
-                    </div>
+                    </div> : null}
 
                     {selectionMode === "brush" ? <div className="grid grid-cols-2 gap-2">
                         <Button type={mode === "paint" ? "primary" : "default"} icon={<Brush className="size-4" />} onClick={() => setMode("paint")}>
@@ -292,13 +333,13 @@ export function CanvasNodeMaskEditDialog({ dataUrl, imageOptions = [], open, onC
                         <Slider min={8} max={160} step={2} value={brushSize} onChange={setBrushSize} />
                     </div> : null}
 
-                    <div className="space-y-2"><div className="flex items-center justify-between text-sm"><span className="font-medium opacity-75">羽化半径</span><span className="font-semibold">{featherRadius}px</span></div><Slider min={0} max={40} step={1} value={featherRadius} onChange={setFeatherRadius} /></div>
+                    {!workflowMask ? <div className="space-y-2"><div className="flex items-center justify-between text-sm"><span className="font-medium opacity-75">羽化半径</span><span className="font-semibold">{featherRadius}px</span></div><Slider min={0} max={40} step={1} value={featherRadius} onChange={setFeatherRadius} /></div> : null}
 
-                    <Checkbox checked={saveCompareCrops} onChange={(event) => setSaveCompareCrops(event.target.checked)}>生成选区对比小图（原图选区 / AI 生成区）</Checkbox>
+                    {!workflowMask ? <Checkbox checked={saveCompareCrops} onChange={(event) => setSaveCompareCrops(event.target.checked)}>生成选区对比小图（原图选区 / AI 生成区）</Checkbox> : null}
 
-                    <Select mode="multiple" allowClear maxTagCount="responsive" placeholder="附加风格参考图（可选）" value={referenceNodeIds} options={imageOptions} onChange={setReferenceNodeIds} />
+                    {!workflowMask ? <Select mode="multiple" allowClear maxTagCount="responsive" placeholder="附加风格参考图（可选）" value={referenceNodeIds} options={imageOptions} onChange={setReferenceNodeIds} /> : null}
 
-                    <div className="space-y-2">
+                    {!workflowMask ? <div className="space-y-2">
                         <div className="text-sm font-medium opacity-75">修改要求</div>
                         <Input.TextArea
                             rows={6}
@@ -311,18 +352,22 @@ export function CanvasNodeMaskEditDialog({ dataUrl, imageOptions = [], open, onC
                             }}
                         />
                         {error ? <div className="text-xs font-medium text-[#ef4444]">{error}</div> : null}
-                    </div>
+                    </div> : error ? <div className="text-xs font-medium text-[#ef4444]">{error}</div> : null}
 
                     <div className="mt-auto flex items-center justify-between gap-2">
-                        <Button icon={<RotateCcw className="size-4" />} onClick={resetMask}>
-                            重置
-                        </Button>
+                        <div className="flex items-center gap-1">
+                            {workflowMask ? <>
+                                <Button type="text" aria-label="撤销" title="撤销" icon={<Undo2 className="size-4" />} disabled={!history || !canUndoMaskSnapshot(history)} onClick={() => restoreHistory("undo")} />
+                                <Button type="text" aria-label="重做" title="重做" icon={<Redo2 className="size-4" />} disabled={!history || !canRedoMaskSnapshot(history)} onClick={() => restoreHistory("redo")} />
+                            </> : null}
+                            <Button icon={<RotateCcw className="size-4" />} onClick={resetMask}>清除</Button>
+                        </div>
                         <div className="flex items-center gap-2">
                             <Button icon={<X className="size-4" />} onClick={onClose}>
                                 取消
                             </Button>
-                            <Button type="primary" icon={<WandSparkles className="size-4" />} onClick={submit}>
-                                AI 修改
+                            <Button type="primary" icon={workflowMask ? <Check className="size-4" /> : <WandSparkles className="size-4" />} onClick={submit}>
+                                {workflowMask ? "确认" : "AI 修改"}
                             </Button>
                         </div>
                     </div>
@@ -344,6 +389,43 @@ function clearCanvas(canvas: HTMLCanvasElement | null) {
     const context = canvas?.getContext("2d");
     if (!canvas || !context) return;
     context.clearRect(0, 0, canvas.width, canvas.height);
+}
+
+async function initializeSelectionCanvas(canvas: HTMLCanvasElement, maskDataUrl?: string) {
+    clearCanvas(canvas);
+    if (!maskDataUrl) return;
+    const mask = await loadImage(maskDataUrl);
+    const source = document.createElement("canvas");
+    source.width = canvas.width;
+    source.height = canvas.height;
+    const sourceContext = source.getContext("2d");
+    const context = canvas.getContext("2d");
+    if (!sourceContext || !context) return;
+    sourceContext.drawImage(mask, 0, 0, source.width, source.height);
+    const maskPixels = sourceContext.getImageData(0, 0, source.width, source.height);
+    const selection = context.createImageData(canvas.width, canvas.height);
+    for (let index = 0; index < selection.data.length; index += 4) {
+        selection.data[index + 3] = 255 - maskPixels.data[index + 3];
+    }
+    context.putImageData(selection, 0, 0);
+}
+
+async function restoreSelectionSnapshot(canvas: HTMLCanvasElement | null, dataUrl: string) {
+    if (!canvas) return;
+    const image = await loadImage(dataUrl);
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+}
+
+function loadImage(dataUrl: string) {
+    return new Promise<HTMLImageElement>((resolve, reject) => {
+        const image = new Image();
+        image.onload = () => resolve(image);
+        image.onerror = () => reject(new Error("图片读取失败"));
+        image.src = dataUrl;
+    });
 }
 
 function drawMaskStroke(context: CanvasRenderingContext2D, from: { x: number; y: number }, to: { x: number; y: number }, size: number) {

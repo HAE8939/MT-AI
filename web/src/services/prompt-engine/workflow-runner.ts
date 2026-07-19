@@ -34,7 +34,6 @@ export type PromptEngineRunResult = {
 /** 按 inputSpec 校验输入完整性，返回错误信息（null = 通过） */
 export function validateRunInput(config: PromptEngineWorkflowConfig, input: PromptEngineRunInput): string | null {
     if (config.inputSpec.image === "required" && !input.image) return "请先上传原图";
-    if (config.inputSpec.mask === "required" && !input.mask) return "请先涂抹蒙版指定修改区域";
     if (config.inputSpec.userText === "required" && !input.userText?.trim()) return "请输入描述文字";
     const requiredRefs = config.inputSpec.refImagesOptional ? 0 : config.inputSpec.refImages || 0;
     if (requiredRefs > 0 && (input.refImages?.length || 0) < requiredRefs) return `请上传 ${requiredRefs} 张参考图`;
@@ -83,7 +82,7 @@ export async function runPromptEngineWorkflow(
         generated = await requestGeneration(generationConfig, finalPrompt, { signal: options?.signal });
     } else {
         const mask = config.meta.taskType === "masked-edit" && input.mask ? toReference(input.mask, "mask.png") : undefined;
-        generated = await requestEdit(generationConfig, finalPrompt, references, mask, { signal: options?.signal });
+        generated = await requestEdit({ ...generationConfig, size: "auto" }, finalPrompt, references, mask, { signal: options?.signal });
     }
     if (!generated.length) throw new Error("图像模型没有返回结果");
 

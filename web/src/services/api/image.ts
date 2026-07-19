@@ -2,7 +2,7 @@ import axios from "axios";
 
 import { buildApiUrl, registerModelCapabilities, resolveModelRequestConfig, type AiConfig, type ModelChannel } from "@/stores/use-config-store";
 import { nanoid } from "nanoid";
-import { dataUrlToFile } from "@/lib/image-utils";
+import { convertDataUrlToPng, dataUrlToFile } from "@/lib/image-utils";
 import { buildImageReferencePromptText } from "@/lib/image-reference-prompt";
 import { compositeMaskedRegion, cropDataUrlRect, expandMaskRect, readMaskSelectionRect, binarizeMaskDataUrl } from "@/lib/mask-inpaint";
 import { imageToDataUrl } from "@/services/image-storage";
@@ -172,9 +172,25 @@ function validateImageSize(width: number, height: number) {
     if (pixels < IMAGE_MIN_PIXELS || pixels > IMAGE_MAX_PIXELS) throw new Error("图像总像素需在 655360 到 8294400 之间，请调整尺寸");
 }
 
-function resolveRequestSize(quality: string | undefined, size: string) {
+function isGptImageModel(model: string) {
+    return model.toLowerCase().includes("gpt-image-");
+}
+
+function isGptImage2(model: string) {
+    return model.toLowerCase().includes("gpt-image-2");
+}
+
+function resolveFixedGptImageSize(value: string) {
+    const dimensions = parseImageDimensions(value);
+    const ratio = dimensions || parseImageRatio(value);
+    if (ratio.width === ratio.height) return "1024x1024";
+    return ratio.width > ratio.height ? "1536x1024" : "1024x1536";
+}
+
+function resolveRequestSize(quality: string | undefined, size: string, model: string) {
     const value = size.trim();
     if (!value || value.toLowerCase() === "auto") return undefined;
+    if (isGptImageModel(model) && !isGptImage2(model)) return resolveFixedGptImageSize(value);
     const dimensions = parseImageDimensions(value);
     if (dimensions) {
         validateImageSize(dimensions.width, dimensions.height);
@@ -727,7 +743,7 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
         }
     }
     const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
+    const requestSize = resolveRequestSize(quality, config.size, requestConfig.model);
     try {
         const response = await axios.post<ImageApiResponse>(
             aiApiUrl(requestConfig, "/images/generations"),
@@ -737,8 +753,8 @@ export async function requestGeneration(config: AiConfig, prompt: string, option
                 n,
                 ...(quality ? { quality } : {}),
                 ...(requestSize ? { size: requestSize } : {}),
-                response_format: "b64_json",
-                output_format: IMAGE_OUTPUT_FORMAT,
+                ...(!isGptImageModel(requestConfig.model) ? { response_format: "b64_json" } : {}),
+                ...(isGptImageModel(requestConfig.model) ? { output_format: IMAGE_OUTPUT_FORMAT } : {}),
             },
             {
                 headers: aiHeaders(requestConfig, "application/json"),
@@ -769,21 +785,28 @@ export async function requestEdit(config: AiConfig, prompt: string, references: 
         }
     }
     const quality = normalizeQuality(config.quality);
-    const requestSize = resolveRequestSize(quality, config.size);
+    const requestSize = resolveRequestSize(quality, config.size, requestConfig.model);
     const formData = new FormData();
     formData.set("model", requestConfig.model);
     formData.set("prompt", withSystemPrompt(requestConfig, requestPrompt));
     formData.set("n", String(n));
-    formData.set("response_format", "b64_json");
-    formData.set("output_format", IMAGE_OUTPUT_FORMAT);
+    if (isGptImageModel(requestConfig.model)) formData.set("output_format", IMAGE_OUTPUT_FORMAT);
+    else formData.set("response_format", "b64_json");
     if (quality) {
         formData.set("quality", quality);
     }
     if (requestSize) {
         formData.set("size", requestSize);
     }
-    const files = await Promise.all(references.map(async (image) => dataUrlToFile({ ...image, dataUrl: await imageToDataUrl(image) })));
-    files.forEach((file) => formData.append("image", file));
+    const files = await Promise.all(
+        references.map(async (image, index) => {
+            const dataUrl = await imageToDataUrl(image);
+            if (!mask || index > 0) return dataUrlToFile({ ...image, dataUrl });
+            return dataUrlToFile({ ...image, name: image.name.replace(/\.[^.]+$/, ".png"), type: "image/png", dataUrl: await convertDataUrlToPng(dataUrl) });
+        }),
+    );
+    const imageField = isGptImageModel(requestConfig.model) ? "image[]" : "image";
+    files.forEach((file) => formData.append(imageField, file));
     // 渐变羽化蒙版仅用于 Gemini 客户端合成，images/edits 通道仍传二值蒙版（与原有行为一致）
     if (mask) formData.set("mask", dataUrlToFile({ ...mask, dataUrl: await binarizeMaskDataUrl(mask.dataUrl) }));
 
