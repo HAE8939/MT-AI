@@ -15,7 +15,7 @@ import type { AgentTemplate } from "@/types/workflow";
 
 type Theme = (typeof canvasThemes)[keyof typeof canvasThemes];
 
-const MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 const STATUS_LABELS: Record<AiWorkflowStatus, string> = {
     queued: "排队中",
@@ -93,7 +93,7 @@ export function CanvasWorkflowRunPanel({ template, theme, currentProjectId, onBa
                                         accept="image/*"
                                         showUploadList={false}
                                         beforeUpload={(file) => {
-                                            if (file.size > MAX_UPLOAD_BYTES) message.error("图片超过 30MB，官方接口不支持，请压缩后再试");
+                                            if (file.size > MAX_UPLOAD_BYTES) message.error("图片超过 10MB，请压缩后再试");
                                             else setLocalFile(index, file);
                                             return Upload.LIST_IGNORE;
                                         }}

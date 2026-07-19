@@ -1,14 +1,18 @@
 import { useMemo } from "react";
-import { AutoComplete, Form, Input, InputNumber, Modal, Select } from "antd";
+import { App, Button, Form, Input, InputNumber, Modal, Select, Upload } from "antd";
+import { ImagePlus, X } from "lucide-react";
 
 import { useRunningHubRun } from "@/components/workflow/use-runninghub-run";
 import type { AgentTemplate } from "@/types/workflow";
 
 // 运行 RunningHub 工作流的弹窗（/workflows 页）：填参数 → 提交统一任务运行时 → 结果写回画布新节点。
-// 核心逻辑在 useRunningHubRun；图片参数可选画布图片节点或直接填公网 URL（AutoComplete 自由输入保留 URL 能力）。
+// 图片字段支持本地上传、选画布图片节点两种方式；图片统一限制 ≤10MB，避免第三方 API 因过大失败。
+
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 export function RunningHubRunDialog({ template, defaultProjectId, onClose }: { template: AgentTemplate | null; defaultProjectId?: string; onClose: () => void }) {
-    const { spec, values, setValue, canvasImageNodes, projects, projectId, setProjectId, uploading, run } = useRunningHubRun(template, { defaultProjectId });
+    const { message } = App.useApp();
+    const { spec, values, setValue, localFiles, setLocalFile, canvasImageNodes, projects, projectId, setProjectId, uploading, run } = useRunningHubRun(template, { defaultProjectId });
     const canvasImageOptions = useMemo(() => canvasImageNodes.map((node) => ({ value: node.metadata!.content as string, label: node.title || node.id })), [canvasImageNodes]);
 
     const submit = async () => {
@@ -33,13 +37,48 @@ export function RunningHubRunDialog({ template, defaultProjectId, onClose }: { t
                         {spec.fields.map((field, index) => (
                             <Form.Item key={index} label={field.label} className="mb-3">
                                 {field.kind === "image" ? (
-                                    <AutoComplete
-                                        className="w-full"
-                                        options={canvasImageOptions}
-                                        value={values[`${index}`] || ""}
-                                        placeholder={canvasImageOptions.length ? "选择画布图片，或填写图片公网 URL" : "图片公网 URL（COS 直链或其他可公开访问地址）"}
-                                        onChange={(value) => setValue(index, value)}
-                                    />
+                                    <div className="space-y-2">
+                                        {/* 本地上传预览 + 清除 */}
+                                        {localFiles[index] ? (
+                                            <div className="relative inline-block">
+                                                <img src={localFiles[index].previewUrl} alt={field.label} className="h-24 w-24 rounded-lg border border-stone-200 object-cover dark:border-stone-700" />
+                                                <button
+                                                    type="button"
+                                                    className="absolute -right-1.5 -top-1.5 grid size-5 place-items-center rounded-full border border-stone-200 bg-white shadow-sm dark:border-stone-700 dark:bg-stone-900"
+                                                    onClick={() => setLocalFile(index, null)}
+                                                >
+                                                    <X className="size-3" />
+                                                </button>
+                                            </div>
+                                        ) : null}
+                                        {/* 上传按钮 + 画布图片选择 */}
+                                        <div className="flex gap-2">
+                                            <Upload
+                                                accept="image/*"
+                                                showUploadList={false}
+                                                beforeUpload={(file) => {
+                                                    if (file.size > MAX_UPLOAD_BYTES) {
+                                                        message.error("图片超过 10MB，请压缩后再试");
+                                                    } else {
+                                                        setLocalFile(index, file);
+                                                    }
+                                                    return Upload.LIST_IGNORE;
+                                                }}
+                                            >
+                                                <Button icon={<ImagePlus className="size-3.5" />} size="small">
+                                                    本地上传
+                                                </Button>
+                                            </Upload>
+                                            <Select
+                                                className="min-w-0 flex-1"
+                                                allowClear
+                                                placeholder={canvasImageOptions.length ? "或从画布选图片" : "画布上还没有图片"}
+                                                options={canvasImageOptions}
+                                                value={!localFiles[index] && values[`${index}`] ? values[`${index}`] : undefined}
+                                                onChange={(value) => setValue(index, value || "")}
+                                            />
+                                        </div>
+                                    </div>
                                 ) : field.kind === "number" ? (
                                     <InputNumber className="w-full" placeholder={field.defaultValue || "填写数值"} value={values[`${index}`] ? Number(values[`${index}`]) : null} onChange={(value) => setValue(index, value === null || value === undefined ? "" : String(value))} />
                                 ) : (

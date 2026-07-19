@@ -1,0 +1,296 @@
+{
+  "meta": {
+    "id": "material-replace-by-ref",
+    "version": "1.1",
+    "name": "指定材质替换",
+    "description": "用户上传原图并涂抹蒙版指定替换区域，再上传一张材质参考图。LLM 先从参考图中提炼材质的可语言化特征，再扩写为英文编辑提示词，驱动 gpt-image-1 将蒙版区域的表面材质替换为参考材质，且不改变物体形状与蒙版外内容。",
+    "taskType": "masked-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "localbanana.io 意图框架：保留你在意的部分（物体几何、场景光照），只改变材质表面",
+      "gpt-image-1 编辑端点使用自然语言指令句，本配置全部采用 Replace / Apply / Match / Preserve 句式"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "required",
+    "refImages": 1,
+    "userText": "optional",
+    "extraFields": []
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "目标表面(蒙版语义) + 材质身份(参考图提炼) + 物理属性(纹理/光泽/反射) + 纹理尺度与透视 + 光照响应 + 边缘衔接 + 锁定声明",
+      "layers": [
+        {
+          "layer": "target",
+          "zh": "目标表面",
+          "note": "先判断蒙版覆盖的是什么表面：墙面/地板/台面/柜门/沙发面料等，替换指令围绕该表面展开"
+        },
+        {
+          "layer": "materialIdentity",
+          "zh": "材质身份",
+          "note": "从参考图提炼：材质大类+颜色+纹理图案+饰面（如 warm walnut wood veneer with straight fine grain, matte finish）"
+        },
+        {
+          "layer": "physicalProperties",
+          "zh": "物理属性",
+          "note": "光泽度（matte/satin/glossy/polished）、粗糙度、是否有反射，决定材质真实感"
+        },
+        {
+          "layer": "textureScale",
+          "zh": "纹理尺度",
+          "note": "必选。纹理花纹大小必须符合场景透视：near surfaces show larger pattern, receding surfaces foreshorten naturally"
+        },
+        {
+          "layer": "lightingResponse",
+          "zh": "光照响应",
+          "note": "必选。新材质必须响应原图现有光源：高光位置、反射强弱、明暗过渡都按原光照来"
+        },
+        {
+          "layer": "edges",
+          "zh": "边缘衔接",
+          "note": "材质在蒙版边界处与相邻表面自然收口（踢脚线、阴角、收边条处干净利落）"
+        },
+        {
+          "layer": "lock",
+          "zh": "锁定声明",
+          "note": "必选。物体几何形状不变，蒙版外一切不变"
+        }
+      ]
+    },
+    "maskProtocol": {
+      "principle": "蒙版是材质替换范围的唯一权威。只换『表面材质』，不改变物体的形状、结构和位置。",
+      "rules": [
+        "先识别蒙版覆盖的表面属于什么物体（整面墙/局部墙裙/地板/沙发座面），提示词明确点名该表面",
+        "同一物体只被涂了一部分时，按用户涂抹范围替换，并在边界处描述自然收口方式",
+        "提示词必须包含形状锁定：keep the object's exact shape, geometry and outline unchanged",
+        "提示词结尾必须包含 'Do not alter anything outside the edited area.'"
+      ]
+    },
+    "referenceProtocol": {
+      "imageOrder": "第一张图=待编辑原图，第二张图=材质参考图。提示词中用 'the material shown in the second image' 指代参考材质。",
+      "extraction": [
+        "LLM 必须先把参考材质翻译成语言特征：大类（wood/stone/marble/tile/fabric/leather/metal/paint/wallpaper）、主色与副色、纹理图案（直纹/山纹/大理石脉络/编织纹/几何拼花）、饰面光泽",
+        "参考图若是产品图或贴图小样，忽略其拍摄光照与环境，只提取材质本身特征",
+        "用户文字与参考图冲突时（文字说深色、参考图是浅色），以参考图为准，文字仅作补充约束"
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Replace the ... in the masked area with ... 开头，Match / Preserve 收尾",
+      "length": "60-110 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "绝对物理数值（板宽15cm、砖缝3mm），用 narrow grout lines / wide planks 等相对表述",
+        "negative prompt 语法，改用正向锁定声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层",
+        "items": [
+          "物体几何形状与轮廓",
+          "蒙版外全部内容",
+          "原图光源方向与色温",
+          "相机角度与透视",
+          "该表面上的投影关系（家具投在墙上的影子仍在）"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "新材质的颜色与纹理",
+          "新材质的饰面光泽",
+          "材质应有的接缝/拼板/砖缝逻辑"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "纹理尺度随透视缩放",
+          "高光与反射按原光源重算",
+          "原有环境影/接触影保留在新材质上",
+          "蒙版边界与相邻材质自然收口",
+          "颗粒与清晰度和原图一致"
+        ]
+      }
+    },
+    "templates": [
+      {
+        "id": "wall-to-wood-panel",
+        "scene": "墙面换木饰面",
+        "tags": [
+          "墙面",
+          "木饰面"
+        ],
+        "en": "Replace the wall surface in the masked area with the material shown in the second image: warm walnut wood paneling with straight fine grain and a matte finish, installed as full-height vertical panels with subtle seams. Keep the wall's exact geometry, corners and outline unchanged, and let the existing furniture shadows continue to fall on the new surface naturally. The wood grain scale must follow the room's perspective, and highlights must respond to the room's existing light sources and color temperature. Photorealistic interior photograph quality. Do not alter anything outside the edited area.",
+        "zh": "将蒙版区域的墙面替换为第二张图所示材质：暖色胡桃木饰面、直纹细纹理、哑光，竖向通高板拼装、留细缝。墙体几何、转角与轮廓不变，原有家具投影继续自然落在新表面上。木纹尺度随房间透视变化，高光按原有光源与色温响应。写实室内摄影质感。蒙版外不做任何改动。"
+      },
+      {
+        "id": "floor-to-marble",
+        "scene": "地面换大理石",
+        "tags": [
+          "地面",
+          "石材"
+        ],
+        "en": "Replace the floor in the masked area with the material shown in the second image: polished light-grey marble with soft natural veining, laid as large square tiles with narrow grout lines. Keep the floor plane, room perspective and every piece of furniture exactly as they are, with furniture legs still grounded and their contact shadows preserved on the new floor. The marble's gloss must mirror the room's existing lights and windows with soft, physically believable reflections, and the veining scale must foreshorten with distance. Do not alter anything outside the edited area.",
+        "zh": "将蒙版区域的地面替换为第二张图所示材质：浅灰色抛光大理石、柔和天然脉络、大规格方砖密缝铺贴。地面平面、房间透视与所有家具保持原样，家具腿仍然落地且接触阴影保留在新地面上。大理石光泽以柔和可信的方式映出现有灯光与窗户，石纹尺度随距离透视收缩。蒙版外不做任何改动。"
+      },
+      {
+        "id": "sofa-to-leather",
+        "scene": "沙发换皮革",
+        "tags": [
+          "家具",
+          "面料"
+        ],
+        "en": "Replace the sofa upholstery in the masked area with the material shown in the second image: cognac-brown full-grain leather with a soft sheen and natural creasing. Keep the sofa's exact shape, cushion structure, seams and proportions unchanged, with the leather wrapping the existing forms and folding naturally at the same crease points. Highlights on the leather must come from the room's existing light direction and color temperature, and all cushions, throws and surroundings outside the mask stay untouched. Photorealistic result. Do not alter anything outside the edited area.",
+        "zh": "将蒙版区域的沙发面料替换为第二张图所示材质：干邑棕头层皮革、柔和光泽、自然褶皱。沙发形状、坐垫结构、缝线与比例完全不变，皮革包裹原有形体并在原褶皱位置自然起皱。皮革高光来自房间现有光照方向与色温，蒙版外的抱枕、盖毯与周边一律不动。写实效果。蒙版外不做任何改动。"
+      },
+      {
+        "id": "generic-fallback",
+        "scene": "通用兜底",
+        "tags": [
+          "通用"
+        ],
+        "en": "Replace the surface material in the masked area with the material shown in the second image, keeping the underlying object's shape, geometry and outline exactly unchanged. Describe and apply the reference material's color, texture pattern and finish faithfully, scale its texture to match the scene's perspective, and make its highlights and reflections respond to the image's existing lighting direction and color temperature. Preserve all existing shadows falling on this surface. Photorealistic interior photograph quality. Do not alter anything outside the edited area.",
+        "zh": "将蒙版区域的表面材质替换为第二张图所示材质，物体形状、几何与轮廓完全不变。忠实还原参考材质的颜色、纹理图案与饰面，纹理尺度匹配场景透视，高光与反射响应原图光照方向与色温。保留落在该表面上的原有阴影。写实室内摄影质感。蒙版外不做任何改动。"
+      }
+    ],
+    "attributes": {
+      "materialCategories": [
+        "wood veneer",
+        "solid wood",
+        "marble",
+        "travertine",
+        "terrazzo",
+        "ceramic tile",
+        "microcement",
+        "wallpaper",
+        "paint",
+        "fabric",
+        "boucle",
+        "velvet",
+        "leather",
+        "brushed metal",
+        "fluted glass"
+      ],
+      "finishes": [
+        "matte",
+        "satin",
+        "semi-gloss",
+        "glossy",
+        "polished",
+        "honed",
+        "brushed"
+      ],
+      "patternScale": [
+        "fine grain",
+        "bold veining",
+        "subtle texture",
+        "large-format",
+        "narrow planks",
+        "wide planks"
+      ],
+      "colorTone": [
+        "warm",
+        "cool",
+        "neutral",
+        "light",
+        "dark",
+        "muted",
+        "rich"
+      ]
+    },
+    "failureModes": [
+      {
+        "mode": "纹理尺度失真",
+        "zh": "花纹相对空间过大或过小，像贴图",
+        "preventionPhrase": "The texture scale must be physically plausible for the surface size and follow the scene's perspective."
+      },
+      {
+        "mode": "材质溢出蒙版",
+        "zh": "新材质渗到相邻表面",
+        "preventionPhrase": "Apply the new material strictly within the edited area with clean edges against adjacent surfaces."
+      },
+      {
+        "mode": "物体形状被改",
+        "zh": "换材质时顺带改了造型",
+        "preventionPhrase": "Keep the object's exact shape, geometry and outline unchanged; only the surface material changes."
+      },
+      {
+        "mode": "光照响应缺失",
+        "zh": "新材质高光与场景光源无关，像平贴",
+        "preventionPhrase": "Highlights and reflections on the new material must come from the room's existing light sources and direction."
+      },
+      {
+        "mode": "纹理不随形",
+        "zh": "纹理不贴合曲面/透视，方向错乱",
+        "preventionPhrase": "The texture must wrap and foreshorten naturally along the surface's orientation and perspective."
+      },
+      {
+        "mode": "原有阴影丢失",
+        "zh": "家具投影、环境闭塞影被抹掉",
+        "preventionPhrase": "Preserve all existing shadows and ambient occlusion falling on this surface."
+      },
+      {
+        "mode": "参考图误读",
+        "zh": "把参考图的环境光照当成材质本色",
+        "preventionPhrase": "Take only the material's intrinsic color, pattern and finish from the reference; ignore its photographic lighting."
+      },
+      {
+        "mode": "接缝逻辑错误",
+        "zh": "石材无缝像塑料、木板无拼缝",
+        "preventionPhrase": "Include realistic seams, plank joints or grout lines appropriate to this material."
+      }
+    ],
+    "tips": [
+      "参考图尽量用平整、光照均匀的材质小样图，提取会更准",
+      "蒙版尽量沿物体表面边缘涂抹完整，只涂一半墙会在中间产生收口",
+      "扩写时先写材质身份，再写光照响应，最后写锁定，权重从高到低"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "把这面墙换成参考图的材质",
+        "maskContext": "蒙版覆盖电视背景墙整面",
+        "refImageContext": "参考图为浅色鱼肚白大理石板",
+        "expanded_zh": "将蒙版区域的电视背景墙替换为第二张图所示材质：浅色鱼肚白大理石、细腻淡灰脉络、抛光饰面，大板密缝竖贴。墙体几何与轮廓不变，石纹尺度随透视变化，高光按客厅现有灯光与窗光响应，原有电视柜投影保留在新墙面上。蒙版外不做任何改动。",
+        "expanded_en": "Replace the TV feature wall in the masked area with the material shown in the second image: light Calacatta-style marble with delicate grey veining and a polished finish, installed as large vertical slabs with minimal seams. Keep the wall's geometry and outline unchanged, scale the veining naturally with the room's perspective, and let the marble's sheen respond to the living room's existing lights and window light. Preserve the TV cabinet's shadow on the new surface. Do not alter anything outside the edited area."
+      },
+      {
+        "userInput": "沙发换成这个布料，颜色深一点",
+        "maskContext": "蒙版覆盖三人位沙发主体",
+        "refImageContext": "参考图为米白色羊羔绒面料",
+        "expanded_zh": "将蒙版区域的沙发面料替换为第二张图所示材质，并按用户要求整体加深为暖调浅灰米色羊羔绒：短绒、哑光、细密卷曲纹理。沙发造型、坐垫结构与缝线不变，绒面在原有褶皱处自然过渡，受光面按房间现有光照方向呈现柔和明暗。蒙版外的抱枕与周边一律不动。蒙版外不做任何改动。",
+        "expanded_en": "Replace the sofa upholstery in the masked area with the material shown in the second image, shifted slightly darker per the request: a warm greige boucle fabric with a short, densely looped matte texture. Keep the sofa's shape, cushion structure and seams exactly unchanged, letting the boucle shade softly across the existing folds according to the room's light direction. Leave the throw pillows and everything outside the mask untouched. Do not alter anything outside the edited area."
+      }
+    ]
+  }
+}

@@ -1,0 +1,486 @@
+{
+  "meta": {
+    "id": "scene-add-person",
+    "version": "2.2",
+    "name": "GPT-IMAGE 场景添加人物提示词引擎配置",
+    "description": "用户上传场景图并涂抹蒙版指定位置，输入简单描述，由 LLM 参考本配置扩写为高质量英文编辑提示词，驱动 gpt-image-1 蒙版局部重绘，在场景中自然地加入人物。",
+    "taskType": "masked-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "localbanana.io 视觉意图方法论：7要素提示词解剖（主体/媒介/风格/环境/光照/构图/色彩）、保留-改变意图框架、相机与胶片写实词汇",
+      "注意：LocalBanana 面向 Midjourney/Nano Banana 使用逗号短语风格，gpt-image-1 编辑端点对自然语言指令句响应更好，本配置采用指令句式，仅吸收其词汇分层"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "required",
+    "refImages": 0,
+    "userText": "required",
+    "extraFields": []
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "位置(蒙版语义) + 人物属性 + 动作/姿势 + 光照匹配 + 构图/镜头感 + 色彩协调 + 摄影风格 + 锁定元素声明",
+      "layers": [
+        {
+          "layer": "position",
+          "zh": "位置",
+          "note": "描述蒙版区域处有什么（沙发/窗边/小路），只做语义辅助，不与蒙版冲突"
+        },
+        {
+          "layer": "subject",
+          "zh": "人物属性",
+          "note": "年龄段、性别、族裔、发型、服装，用户未指定的从 attributes 补全"
+        },
+        {
+          "layer": "pose",
+          "zh": "动作/姿势",
+          "note": "具体到肢体动作和与场景物体的接触方式，禁用模糊词"
+        },
+        {
+          "layer": "lighting",
+          "zh": "光照匹配",
+          "note": "必选。匹配原图光照方向、色温、软硬和阴影风格"
+        },
+        {
+          "layer": "composition",
+          "zh": "构图/镜头感",
+          "note": "人物在画面中的视觉权重与镜头感受，如 natural depth of field、same camera angle as the original"
+        },
+        {
+          "layer": "color",
+          "zh": "色彩协调",
+          "note": "人物服装色调与原图整体色调协调，如 muted tones that harmonize with the room's palette"
+        },
+        {
+          "layer": "style",
+          "zh": "摄影风格",
+          "note": "必选。candid lifestyle photograph / editorial 等写实约束，避免合成假感"
+        },
+        {
+          "layer": "lock",
+          "zh": "锁定元素",
+          "note": "必选。声明蒙版外一切不变"
+        }
+      ],
+      "note": "不需要精确到厘米，但需要给 AI 足够的视觉线索来判断人物该如何融入环境。绝不使用绝对物理数值。"
+    },
+    "maskProtocol": {
+      "principle": "用户涂抹的蒙版是人物位置的唯一权威来源，提示词中的位置描述只做语义配合，绝不与蒙版冲突。",
+      "rules": [
+        "先判断蒙版区域覆盖的是什么物体/表面（沙发、地板、床、小路、墙边），提示词围绕该物体描述人物的接触与交互方式",
+        "若用户文字位置与蒙版实际位置矛盾（说'沙发上'但涂的是窗边），以蒙版为准，改写位置描述并在返回中注明",
+        "人物必须完整落在蒙版区域内可容纳的合理体积中，姿势选择要与蒙版形状匹配：竖长条蒙版→站姿，横向低位蒙版→坐/躺姿",
+        "提示词结尾必须包含 'Do not alter anything outside the edited area.' 类的越界保护声明"
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段自然语言指令句，以 Add / Place 开头，Match / Preserve 收尾",
+      "length": "60-120 英文单词，超长会稀释指令权重",
+      "style": "指令句式（Add a ... She is ... Match ... Preserve ...），不用逗号短语堆砌，不用列表和 markdown",
+      "forbidden": [
+        "任何解释性文字或前后缀，只输出提示词本身",
+        "绝对物理数值（身高1.65米、距离1.2米），AI 会根据场景透视自动推算",
+        "negative prompt 语法（gpt-image-1 不支持），改用正向锁定声明"
+      ]
+    },
+    "selectionRules": {
+      "flow": [
+        "第一步：从原图（若提供）判断场景类型：室内坐具 / 室内站立 / 卧室 / 餐桌咖啡 / 户外小路 / 户外街景 / 办公",
+        "第二步：结合用户输入中的性别与动作，按 templates 的 tags 匹配最接近的模板作为扩写基准",
+        "第三步：无匹配时使用 generic-fallback 模板，由 LLM 根据原图自行描述蒙版处的场景",
+        "第四步：用户明确指定的任何属性（年龄/服装/动作等）永远覆盖模板默认值"
+      ],
+      "positioning": "参考流程而非机械步骤：可凭对原图的直接判断选定基准模板、混合多个模板或完全自创；templates 仅作质量标杆，用户明确指定的属性永远优先。"
+    },
+    "intentFramework": {
+      "source": "借鉴 localbanana.io 的『保留你在意的部分，改变其他一切』意图框架",
+      "preserve": {
+        "zh": "保留层：原图中不可动的部分",
+        "items": [
+          "背景与墙面",
+          "家具与装饰",
+          "地板/地面",
+          "原有光源与色调",
+          "相机角度与透视",
+          "画面裁切"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层：新加入的部分",
+        "items": [
+          "人物主体",
+          "姿势与动作",
+          "服装造型",
+          "表情与视线",
+          "手持道具"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层：让引入层融入保留层的粘合指令（成败关键）",
+        "items": [
+          "人物受光方向与色温",
+          "接触阴影",
+          "景深与焦点一致",
+          "噪点/颗粒度一致",
+          "服装色调与环境配色协调",
+          "边缘自然过渡"
+        ]
+      }
+    },
+    "templates": [
+      {
+        "id": "indoor-sofa",
+        "scene": "室内沙发场景",
+        "tags": [
+          "室内",
+          "沙发",
+          "坐姿",
+          "女"
+        ],
+        "en": "Add a young East Asian woman in her early 20s sitting casually on the sofa in the masked area. She is wearing a simple white t-shirt and light blue jeans, legs crossed, one arm resting on the backrest, with a relaxed smile. Her weight visibly settles into the cushions, feet grounded with soft natural contact shadows. Match the room's existing lighting direction, color temperature and shadow softness, and keep her clothing tones in harmony with the room's palette. The result should look like a candid lifestyle photograph taken in one shot. Preserve all furniture, decor and walls; do not alter anything outside the edited area.",
+        "zh": "在蒙版区域的沙发上添加一位20岁出头的亚洲女生，穿白T恤和浅蓝牛仔裤，双腿交叉随意地坐着，一只手搭在靠背上，表情放松微笑。身体自然陷入沙发坐垫，脚落地并带柔和接触阴影。匹配房间光照方向、色温与阴影柔度，服装色调与房间配色协调。画面像一张真实抓拍的生活照。保留所有家具装饰不变，不改动蒙版外任何内容。"
+      },
+      {
+        "id": "indoor-window-standing",
+        "scene": "室内窗边站立场景",
+        "tags": [
+          "室内",
+          "窗边",
+          "站姿",
+          "女"
+        ],
+        "en": "Place a young East Asian woman around 22 standing near the window in the masked area. She wears a cream knit sweater and a long skirt, holding a coffee cup with both hands, gazing slightly out of the window. Her feet are firmly planted on the floor with a soft contact shadow, her figure gently rim-lit by the window light. Match the warm ambient light, its direction and softness already present in the scene, and keep the depth of field consistent with the original photo. Editorial lifestyle photography, natural and unposed. Preserve all existing furniture, decor and window view; change nothing outside the edited area.",
+        "zh": "在蒙版区域的窗边放置一位22岁左右的亚洲女生，穿米色针织衫和长裙，双手捧咖啡杯，目光微微望向窗外。双脚稳稳站在地板上并带柔和接触阴影，身形被窗光轻微勾边。匹配场景已有的暖色环境光的方向与柔度，景深与原图一致。生活方式编辑摄影风格，自然不做作。保留所有家具、装饰与窗外景色，蒙版外不做任何改动。"
+      },
+      {
+        "id": "indoor-bed",
+        "scene": "卧室床上场景",
+        "tags": [
+          "室内",
+          "床",
+          "躺姿",
+          "坐姿",
+          "女"
+        ],
+        "en": "Add a young East Asian woman in her 20s lounging on the bed in the masked area, propped against the pillows reading a book, wearing a loose knit cardigan over a soft home outfit, barefoot. The duvet dips naturally under her weight with realistic fabric folds. Match the bedroom's soft diffused light, its direction and warm color temperature, and keep subtle film-like grain consistent with the original image. The scene should feel like a quiet candid morning photograph. Preserve the bedding style, headboard, walls and all decor; do not alter anything outside the edited area.",
+        "zh": "在蒙版区域的床上添加一位20多岁的亚洲女生，靠着枕头半躺看书，家居服外搭宽松针织开衫，赤脚。被子在身体下自然下陷，织物褶皱真实。匹配卧室柔和漫射光的方向与暖色温，颗粒感与原图一致。画面像安静的清晨抓拍。保留床品、床头板、墙面与所有装饰，蒙版外不做改动。"
+      },
+      {
+        "id": "cafe-table",
+        "scene": "咖啡馆/餐桌场景",
+        "tags": [
+          "室内",
+          "餐桌",
+          "咖啡馆",
+          "坐姿",
+          "女"
+        ],
+        "en": "Add a young East Asian woman in her mid-20s seated at the table in the masked area, wearing a white blouse, one hand resting on a coffee cup, looking away naturally as if mid-conversation. Her posture relates believably to the table height and chair. Match the cafe's existing light sources, their direction and color temperature, with her face receiving the same soft light as the tabletop. Keep her clothing tones harmonized with the interior palette. Candid editorial photograph with natural depth of field, as if shot on a 35mm lens. Preserve the table setting, interior and background; change nothing outside the edited area.",
+        "zh": "在蒙版区域的餐桌旁添加一位25岁左右的亚洲女生，穿白衬衫，一只手搭在咖啡杯上，目光自然看向别处像在交谈中。坐姿与桌椅高度关系可信。匹配咖啡馆现有光源的方向与色温，面部受光与桌面一致。服装色调与室内配色协调。抓拍编辑摄影风格，35mm镜头般的自然景深。保留桌面摆设、室内与背景，蒙版外不改动。"
+      },
+      {
+        "id": "outdoor-walking",
+        "scene": "户外小路行走场景",
+        "tags": [
+          "户外",
+          "小路",
+          "走动",
+          "女"
+        ],
+        "en": "Add a young East Asian woman around 25 walking along the path in the masked area, wearing a light summer dress and white sneakers, hair slightly lifted by the breeze, mid-stride with natural arm swing. Her shadow falls in the same direction and length as other shadows in the scene, feet convincingly contacting the ground. Match the natural daylight, its angle, color temperature and atmospheric haze of the original photo, keeping her in the same focal plane as the path. The result should look like a single candid street photograph with subtle film grain. Preserve the landscape, path and every background element; do not alter anything outside the edited area.",
+        "zh": "在蒙版区域的小路上添加一位25岁左右的亚洲女生，穿浅色夏日连衣裙和白色运动鞋，头发被微风轻扬，行走中自然摆臂。她的影子方向和长度与场景中其他阴影一致，脚与地面接触真实。匹配原图自然光的角度、色温与空气氛围，与小路处于同一焦平面。结果像一张带轻微胶片颗粒的街头抓拍。保留景观、小路与所有背景元素，蒙版外不做任何改动。"
+      },
+      {
+        "id": "outdoor-wall-leaning",
+        "scene": "户外街景靠墙场景",
+        "tags": [
+          "户外",
+          "街景",
+          "墙边",
+          "站姿",
+          "男"
+        ],
+        "en": "Add a young East Asian man in his mid-20s leaning against the wall in the masked area, wearing a denim jacket over a plain tee and khaki pants, hands in pockets, one foot flat against the wall, looking down slightly at his phone-free ease. His shoulder presses believably against the wall surface with accurate contact and shadow. Match the street's ambient light direction, color temperature and shadow hardness, and keep his clothing tones muted to sit within the scene's palette. Urban street-photography style, candid and unposed, consistent grain with the original image. Preserve the wall texture, signage and street background; change nothing outside the edited area.",
+        "zh": "在蒙版区域的墙边添加一位25岁左右的亚洲男生，白T外搭牛仔外套配卡其裤，双手插兜，一只脚踩在墙面上，神态放松微微低头。肩膀与墙面的接触和阴影真实可信。匹配街道环境光方向、色温与阴影硬度，服装用低饱和色融入场景配色。街头摄影风格，抓拍不做作，颗粒感与原图一致。保留墙面质感、招牌与街道背景，蒙版外不改动。"
+      },
+      {
+        "id": "office-desk",
+        "scene": "办公场景",
+        "tags": [
+          "室内",
+          "办公",
+          "坐姿",
+          "男"
+        ],
+        "en": "Add an East Asian man around 28 seated at the desk in the masked area, wearing a light blue shirt with sleeves slightly rolled, typing on the laptop with a focused neutral expression. His forearms rest naturally on the desk and the chair supports his posture believably. Match the office lighting — its direction, cool-neutral color temperature and soft shadows — with screen glow subtly reflected on his face if consistent with the scene. Corporate editorial photography, realistic and understated. Preserve the desk items, monitor, chair and office background; do not alter anything outside the edited area.",
+        "zh": "在蒙版区域的办公桌前添加一位28岁左右的亚洲男士，穿浅蓝衬衫微卷袖口，专注地在笔记本上打字，表情自然。小臂自然搭在桌面，座椅对坐姿的支撑可信。匹配办公室光照的方向、中性偏冷色温与柔和阴影，如场景合理可带轻微屏幕反光在脸上。商务编辑摄影风格，写实克制。保留桌面物品、显示器、座椅与办公背景，蒙版外不改动。"
+      },
+      {
+        "id": "generic-fallback",
+        "scene": "通用兜底模板（无匹配场景时使用）",
+        "tags": [
+          "通用",
+          "兜底"
+        ],
+        "en": "Add a person into the masked area of this image. First, describe in the prompt what surface or object the masked area covers and have the person interact with it naturally (sitting on, standing by, leaning against, walking along). Specify age range, gender, hairstyle, outfit appropriate to the scene's season and formality, and one concrete pose detail. Then require: match the existing lighting direction, color temperature and shadow style; ground the person with natural contact shadows; harmonize clothing colors with the scene's palette; keep grain, focus and perspective consistent with the original. The result should look like a single candid photograph, not a composite. Preserve everything outside the edited area.",
+        "zh": "向蒙版区域添加一个人物。先在提示词中描述蒙版覆盖的表面/物体，并让人物与之自然交互（坐在其上/站在旁边/倚靠/沿其行走）。指定年龄段、性别、发型、与场景季节和正式度相符的服装，以及一个具体姿势细节。然后要求：匹配现有光照方向、色温与阴影风格；用自然接触阴影让人物落地；服装配色与场景协调；颗粒、焦点、透视与原图一致。结果像一张真实抓拍而非合成图。蒙版外一切保留。"
+      }
+    ],
+    "attributes": {
+      "age": [
+        "20-year-old / 20岁的",
+        "22-year-old / 22岁的",
+        "25-year-old / 25岁的",
+        "around 28 / 28岁左右",
+        "in her 30s / 30多岁"
+      ],
+      "gender": [
+        "woman / 女生",
+        "man / 男生"
+      ],
+      "ethnicity": [
+        "East Asian / 亚洲",
+        "European / 欧洲",
+        "mixed / 混血"
+      ],
+      "hairstyle": [
+        "long straight black hair / 黑色长直发",
+        "shoulder-length wavy hair / 中长发微卷",
+        "short hair / 短发",
+        "low ponytail / 低马尾"
+      ],
+      "top": [
+        "white t-shirt / 白T恤",
+        "cream knit sweater / 米色针织衫",
+        "denim jacket / 牛仔外套",
+        "white blouse / 白衬衫",
+        "light blue shirt / 浅蓝衬衫"
+      ],
+      "bottom": [
+        "light blue jeans / 浅蓝色牛仔裤",
+        "long skirt / 长裙",
+        "tailored pants / 西裤",
+        "khaki pants / 卡其色长裤"
+      ],
+      "shoes": [
+        "white sneakers / 白色运动鞋",
+        "ankle boots / 短靴",
+        "loafers / 乐福鞋",
+        "barefoot / 赤脚（仅限沙发/床/家居场景）"
+      ],
+      "expression": [
+        "relaxed smile / 放松微笑",
+        "neutral expression / 自然表情",
+        "looking away / 看向别处",
+        "looking at camera / 看向镜头",
+        "focused / 专注"
+      ],
+      "props": [
+        "coffee cup / 咖啡杯",
+        "book / 书",
+        "phone / 手机",
+        "handbag / 手提包",
+        "sunglasses / 墨镜（仅户外）",
+        "laptop / 笔记本电脑（仅办公）"
+      ],
+      "cameraFeel": [
+        "natural depth of field / 自然景深",
+        "as if shot on a 35mm lens / 如35mm镜头拍摄",
+        "as if shot on an 85mm portrait lens / 如85mm人像镜头拍摄",
+        "same camera angle as the original / 与原图相同机位"
+      ],
+      "colorMood": [
+        "muted tones harmonized with the scene / 与场景协调的低饱和色调",
+        "warm tones / 暖色调",
+        "cool-neutral tones / 中性偏冷色调"
+      ],
+      "filmLook": [
+        "subtle film grain / 轻微胶片颗粒",
+        "Kodak Portra-like soft color / 类Portra柔和色彩（仅当原图有胶片感时使用）",
+        "clean digital look / 干净数码质感"
+      ]
+    },
+    "coherenceRules": {
+      "title": "属性补全一致性规则（补全用户未指定属性时必须遵守）",
+      "rules": [
+        "服装必须匹配场景季节：雪景/冷色调场景禁用夏装，阳光户外禁用厚外套",
+        "服装正式度匹配场景：办公场景用衬衫西裤，居家场景用休闲服，禁止错位",
+        "服装配色优先选择与原图主色调协调的低饱和颜色，避免抢戏的高饱和色块",
+        "赤脚只允许出现在沙发/床/家居场景；墨镜只允许户外；道具必须在该场景中合理",
+        "cameraFeel/filmLook 必须服从原图：原图是手机快照风就不要强加胶片质感，写实一致性永远优先于风格美感",
+        "族裔/年龄/性别未指定时默认：East Asian、20多岁、女性（可按产品目标用户调整此默认值）"
+      ]
+    },
+    "failureModes": {
+      "title": "局部加人常见翻车点与预防短语（扩写时按需选用，harmonize 层的弹药库）",
+      "modes": [
+        {
+          "issue": "比例失调（人比家具大/小）",
+          "zh": "人物与场景物体比例不符",
+          "preventionPhrase": "her proportions consistent with the sofa and the room's perspective"
+        },
+        {
+          "issue": "悬浮感（脚不落地、无接触阴影）",
+          "zh": "人物像贴上去的，没有落地感",
+          "preventionPhrase": "feet firmly planted on the ground with soft natural contact shadows"
+        },
+        {
+          "issue": "受光方向错误",
+          "zh": "人物亮部方向与场景光源矛盾",
+          "preventionPhrase": "lit from the same direction as the existing light source, matching its color temperature and softness"
+        },
+        {
+          "issue": "阴影缺失或方向错误",
+          "zh": "人物没有投影，或投影方向与场景其他物体不一致",
+          "preventionPhrase": "her cast shadow falls in the same direction and length as other shadows in the scene"
+        },
+        {
+          "issue": "边缘生硬（剪贴画感）",
+          "zh": "人物边缘锐利突兀",
+          "preventionPhrase": "seamlessly blended edges, no cut-out look"
+        },
+        {
+          "issue": "焦平面/景深不一致",
+          "zh": "背景虚化但人物锐利（或反之）",
+          "preventionPhrase": "in the same focal plane and depth of field as the surrounding scene"
+        },
+        {
+          "issue": "噪点/颗粒度不一致",
+          "zh": "人物区域过于干净，与原图颗粒感不符",
+          "preventionPhrase": "matching the grain and noise level of the original photo"
+        },
+        {
+          "issue": "背景被顺手改动",
+          "zh": "蒙版外区域被模型重绘",
+          "preventionPhrase": "Preserve everything outside the edited area exactly as it is; do not alter the background, walls or any objects."
+        },
+        {
+          "issue": "肢体异常",
+          "zh": "手指/四肢数量或形态异常",
+          "preventionPhrase": "with natural anatomy and correctly proportioned hands"
+        },
+        {
+          "issue": "坐具无形变",
+          "zh": "人坐上去但沙发/床垫没有下陷，不真实",
+          "preventionPhrase": "the cushion dips naturally under her weight with realistic fabric folds"
+        }
+      ]
+    },
+    "tips": {
+      "pose": {
+        "title": "姿势要具体但自然，且必须包含与场景物体的接触方式",
+        "examples": [
+          {
+            "bad": "坐着",
+            "good": "双腿交叉随意地坐在沙发上，一只手搭在靠背上，身体自然陷入坐垫"
+          },
+          {
+            "bad": "站着",
+            "good": "双手插兜靠在墙边，一只脚弯曲踩着墙面，肩膀贴墙"
+          },
+          {
+            "bad": "走路",
+            "good": "沿小路走来，行走中自然摆臂，头发被微风轻轻吹起"
+          }
+        ]
+      },
+      "style": {
+        "title": "写实风格收尾短语（每条提示词末段必带其一）",
+        "phrases": {
+          "en": [
+            "The image should look like a candid lifestyle photograph, not a composite.",
+            "The result should look like a single photograph taken in one shot.",
+            "Editorial photography style, natural light, realistic and unretouched."
+          ],
+          "zh": [
+            "画面看起来像一张真实拍摄的照片，而非合成图。"
+          ]
+        }
+      },
+      "noAbsoluteValues": {
+        "title": "不要给绝对物理数值",
+        "reason": "避免身高1.65米、距离沙发1.2米这种写法，AI 会根据场景透视自动推算合理的人物大小和位置"
+      }
+    },
+    "buildExamples": [
+      {
+        "rawInput": "添加一个20岁的女生坐在沙发上",
+        "maskContext": "蒙版覆盖沙发左侧座位区",
+        "matchedTemplate": "indoor-sofa",
+        "expanded_zh": "在蒙版区域的沙发上添加一位20岁的亚洲女生，黑色长直发，穿米色针织衫和浅蓝牛仔裤，双腿交叉随意地坐着，一只手搭在靠背上，放松微笑看向别处。身体自然陷入坐垫，脚落地带柔和接触阴影。匹配房间光照方向与暖色温，服装色调与房间配色协调，景深与颗粒感与原图一致。画面像一张真实抓拍的生活照。保留所有家具装饰，蒙版外不做任何改动。",
+        "expanded_en": "Add a 20-year-old East Asian woman with long straight black hair sitting casually on the sofa in the masked area. She wears a cream knit sweater and light blue jeans, legs crossed, one arm resting on the backrest, smiling softly while looking away. The cushion dips naturally under her weight and her feet rest on the floor with soft contact shadows. Match the room's lighting direction and warm color temperature, harmonize her clothing tones with the room's palette, and keep depth of field and grain consistent with the original. The image should look like a candid lifestyle photograph, not a composite. Preserve all furniture and decor; do not alter anything outside the edited area.",
+        "addedElements": [
+          "发型",
+          "服装",
+          "具体姿势与接触细节",
+          "表情视线",
+          "接触阴影",
+          "色彩协调",
+          "景深颗粒一致",
+          "风格约束",
+          "越界保护"
+        ]
+      },
+      {
+        "rawInput": "加个男生靠在墙边",
+        "maskContext": "蒙版覆盖街边墙面前的竖长条区域",
+        "matchedTemplate": "outdoor-wall-leaning",
+        "expanded_zh": "在蒙版区域的墙边添加一位25岁左右的亚洲男生，短发，白T外搭牛仔外套配卡其裤和白色运动鞋，双手插兜，一只脚踩在墙面上，自然表情微微侧头。肩膀与墙面接触真实，投影方向与街景其他阴影一致。匹配街道光照方向、色温与阴影硬度，服装低饱和融入场景。街头抓拍风格，颗粒与原图一致。保留墙面与街道背景，蒙版外不改动。",
+        "expanded_en": "Add an East Asian man around 25 with short hair leaning against the wall in the masked area, wearing a denim jacket over a white tee, khaki pants and white sneakers, hands in pockets, one foot flat against the wall, head tilted slightly with a neutral expression. His shoulder presses believably against the wall and his cast shadow matches the direction of other shadows in the street. Match the street's light direction, color temperature and shadow hardness, keeping his clothing tones muted within the scene's palette. Candid street-photography style with grain consistent with the original. Preserve the wall and street background; change nothing outside the edited area.",
+        "addedElements": [
+          "发型",
+          "全套服装",
+          "踩墙姿势细节",
+          "肩墙接触",
+          "投影方向一致",
+          "色彩融入",
+          "风格约束",
+          "越界保护"
+        ]
+      },
+      {
+        "rawInput": "加个人",
+        "maskContext": "原图为咖啡馆内景，蒙版覆盖靠窗座位",
+        "matchedTemplate": "generic-fallback → 场景判断后套用 cafe-table",
+        "expanded_zh": "（引擎从原图判断为咖啡馆场景，蒙版在靠窗座位，按默认属性补全）在蒙版区域的靠窗座位添加一位25岁左右的亚洲女生，中长发微卷，穿白衬衫，坐在桌旁一只手搭在咖啡杯上，目光望向窗外。坐姿与桌椅关系可信，面部受窗光与桌面一致。匹配咖啡馆光源方向与色温，35mm镜头般自然景深。抓拍风格。保留桌面摆设与室内背景，蒙版外不改动。",
+        "expanded_en": "Add an East Asian woman in her mid-20s with shoulder-length wavy hair seated at the window-side table in the masked area, wearing a white blouse, one hand resting on a coffee cup, gazing out of the window. Her posture relates believably to the table and chair, her face receiving the same window light as the tabletop. Match the cafe's light direction and color temperature, with natural depth of field as if shot on a 35mm lens. Candid editorial style. Preserve the table setting and interior background; do not alter anything outside the edited area.",
+        "addedElements": [
+          "场景自动判断",
+          "默认属性全套补全",
+          "窗光受光逻辑",
+          "桌椅关系",
+          "镜头感",
+          "越界保护"
+        ]
+      }
+    ]
+  }
+}

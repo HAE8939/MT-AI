@@ -1,0 +1,202 @@
+{
+  "meta": {
+    "id": "sketch-to-render",
+    "version": "1.1",
+    "name": "手绘线稿出图",
+    "description": "用户上传手绘线稿图（草图/马克笔稿/钢笔稿），可上传风格参考图，可输入空间描述（如：棕色毛绒地毯），选择输出档位（1K/2K/4K）。LLM 解读线稿的空间意图，结合参考图风格与用户描述，渲染为写实效果图：忠实线稿的布局与透视，允许合理补全线稿未画的细节。",
+    "taskType": "full-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "与『白膜出图』的区别：白膜几何精确、锁定要求刚性；线稿是手绘、本身不精确，锁定强度降一档——忠实布局与透视意图即可，允许 AI 把歪线画直、补全省略细节",
+      "线稿信息密度低，用户描述与参考图承担更多材质/风格决策"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "none",
+    "refImages": 1,
+    "refImagesOptional": true,
+    "userText": "optional",
+    "extraFields": [
+      {
+        "key": "resolution",
+        "type": "select",
+        "label_zh": "模式选择",
+        "options": [
+          "1K",
+          "2K",
+          "4K"
+        ],
+        "default": "1K"
+      }
+    ]
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "渲染声明 + 线稿意图忠实(布局/透视/家具) + 合理补全授权 + 风格与材质(参考图或描述) + 逐表面赋材质 + 光照方案 + 写实相机声明",
+      "layers": [
+        {
+          "layer": "renderIntent",
+          "zh": "渲染声明",
+          "note": "开头明确：Turn this hand-drawn interior sketch into a photorealistic photograph"
+        },
+        {
+          "layer": "sketchFidelity",
+          "zh": "线稿忠实",
+          "note": "必选。房间布局、透视关系、画中每件家具的类型与位置遵循线稿意图"
+        },
+        {
+          "layer": "completion",
+          "zh": "补全授权",
+          "note": "线稿是手绘：straighten wobbly lines into clean architecture，未画细节按风格合理补全"
+        },
+        {
+          "layer": "styleAssign",
+          "zh": "风格分配",
+          "note": "有参考图则提炼参考图风格；无参考图则按用户描述；两者皆无时默认现代简约暖调"
+        },
+        {
+          "layer": "surfaceMaterials",
+          "zh": "逐表面赋材质",
+          "note": "地面/墙面/主要家具逐一给材质，用户描述的材料优先（如'棕色毛绒地毯'）"
+        },
+        {
+          "layer": "lighting",
+          "zh": "光照方案",
+          "note": "默认明亮白天窗光；线稿画了窗，光从窗来"
+        },
+        {
+          "layer": "camera",
+          "zh": "写实相机",
+          "note": "必选。professional interior photography 质感"
+        }
+      ]
+    },
+    "referenceProtocol": {
+      "imageOrder": "第一张图=手绘线稿（布局权威），第二张图（若有）=风格参考图（材质氛围来源）。",
+      "extraction": [
+        "从线稿读取：空间类型、透视视角、家具清单与位置、门窗位置、显著造型意图（弧形墙、格栅、吊顶造型）",
+        "从参考图读取（若有）：风格、配色、材质体系、氛围",
+        "优先级：用户文字描述 > 参考图风格 > 默认风格"
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Turn this hand-drawn interior sketch into ... 开头",
+      "length": "80-140 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "保留手绘线条痕迹的表述（目标是照片不是上色线稿）",
+        "negative prompt 语法，排除项转写为正向声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层（线稿意图）",
+        "items": [
+          "房间布局与空间关系",
+          "透视与视角",
+          "家具的类型/位置/朝向",
+          "门窗位置",
+          "显著造型意图"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "真实材质与色彩",
+          "完整光照",
+          "织物细节与软装",
+          "把手绘线条转正为真实建筑边线"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "补全的细节与整体风格一致",
+          "家具比例修正到真实合理",
+          "材质纹理尺度符合透视",
+          "光照阴影自洽",
+          "结果读作照片而非插画"
+        ]
+      }
+    },
+    "failureModes": [
+      {
+        "mode": "布局漂移",
+        "zh": "渲染结果与线稿布局对不上",
+        "preventionPhrase": "Follow the sketch's room layout, perspective and furniture placement faithfully."
+      },
+      {
+        "mode": "家具增删",
+        "zh": "自行加减大件家具",
+        "preventionPhrase": "Include exactly the furniture drawn in the sketch; complete only small details the sketch omits."
+      },
+      {
+        "mode": "插画感残留",
+        "zh": "输出像上色线稿/插画",
+        "preventionPhrase": "The result is a photorealistic photograph with real materials and lighting, with no visible sketch lines or illustration style."
+      },
+      {
+        "mode": "过度拘泥歪线",
+        "zh": "把手绘的歪斜复制成歪墙",
+        "preventionPhrase": "Interpret wobbly hand-drawn lines as clean straight architecture."
+      },
+      {
+        "mode": "比例失真",
+        "zh": "沿用线稿夸张比例导致家具异形",
+        "preventionPhrase": "Correct the proportions of all furniture to realistic real-world scale while keeping their placement."
+      },
+      {
+        "mode": "材质无据",
+        "zh": "没有参考与描述时材质随机跑偏",
+        "preventionPhrase": "无输入时使用默认风格：modern minimalist with warm neutral tones, light wood floor, off-white walls"
+      },
+      {
+        "mode": "光照平淡",
+        "zh": "无光照指定出图发灰",
+        "preventionPhrase": "Bright diffused daylight enters from the windows drawn in the sketch, with soft natural shadows."
+      }
+    ],
+    "tips": [
+      "线稿透视越明确出图越稳；纯平面草图建议引导用户用『家装平面方案生成』",
+      "用户描述里的材料词按 颜色+纹理+饰面 展开（复用局部材质修改的 materialLibrary 逻辑）",
+      "1K/2K/4K 档位由后端映射到模型的 size/quality 参数，提示词本身不写分辨率"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "空间描述：棕色毛绒地毯；参考图：无",
+        "sketchContext": "线稿为一点透视客厅：左侧三人沙发、中间茶几、右侧单椅、正面大窗",
+        "expanded_zh": "将这张手绘客厅线稿渲染为写实室内摄影照片，忠实线稿的一点透视与布局：左侧三人沙发、中间茶几、右侧单人椅、正面大窗，家具类型与位置不变，歪斜手绘线条转正为干净的真实建筑边线，家具比例修正到真实尺度。整体采用现代简约暖调：暖白墙面、浅木色地板，按用户要求茶几下铺棕色毛绒地毯（长绒、哑光），沙发米灰色布艺。明亮的白天漫射光从正面大窗入室，阴影柔和。专业室内摄影质感，无任何线稿痕迹。",
+        "expanded_en": "Turn this hand-drawn interior sketch into a photorealistic photograph, faithfully following its one-point perspective and layout: a three-seat sofa on the left, a coffee table in the center, an armchair on the right and a large window ahead — same furniture types and placement, with wobbly hand-drawn lines interpreted as clean straight architecture and all proportions corrected to realistic scale. Apply a modern minimalist scheme in warm neutrals: warm off-white walls, light wood flooring, and per the request a brown plush high-pile rug under the coffee table, with the sofa in greige fabric. Bright diffused daylight enters from the front window with soft natural shadows. Professional interior photography look with no visible sketch lines."
+      }
+    ]
+  }
+}

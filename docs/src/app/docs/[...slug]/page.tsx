@@ -18,3 +18,9 @@ export async function generateMetadata(props: PageProps<'/docs/[...slug]'>): Pro
 
   return getDocPageMetadata(page);
 }
+
+export function generateStaticParams() {
+  return source.getPages().map((page) => ({
+    slug: page.slugs,
+  }));
+}

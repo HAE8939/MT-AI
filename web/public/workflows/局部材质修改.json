@@ -1,0 +1,305 @@
+{
+  "meta": {
+    "id": "material-modify-by-name",
+    "version": "1.1",
+    "name": "局部材质修改",
+    "description": "用户上传原图并涂抹蒙版指定修改区域，从下拉框选择或输入材料名称（无参考图）。LLM 将材料名称展开为完整的材质语言描述，扩写为英文编辑提示词，驱动 gpt-image-1 修改蒙版区域的表面材质。",
+    "taskType": "masked-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "与『指定材质替换』的区别：本工作流没有材质参考图，材质完全由文字驱动，因此 materialLibrary 是本配置的核心——把简短的中文材料名翻译成信息量充足的英文材质描述"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "required",
+    "refImages": 0,
+    "userText": "required",
+    "extraFields": [
+      {
+        "key": "materialName",
+        "type": "select-or-input",
+        "label_zh": "输入/选择材料名称",
+        "note": "下拉选项来自 materialLibrary 的 zh 字段，也允许自由输入"
+      }
+    ]
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "目标表面(蒙版语义) + 材质展开描述(materialLibrary) + 物理属性 + 纹理尺度与透视 + 光照响应 + 边缘衔接 + 锁定声明",
+      "layers": [
+        {
+          "layer": "target",
+          "zh": "目标表面",
+          "note": "先判断蒙版覆盖的表面：墙面/地板/台面/柜体/家具面料"
+        },
+        {
+          "layer": "materialExpansion",
+          "zh": "材质展开",
+          "note": "核心步骤。用户只给一个词（如「大理石」）时，展开为 颜色+纹理+饰面 的完整描述；materialLibrary 是参考写法而非封闭清单，可按同等信息密度自行展开更贴合场景的版本"
+        },
+        {
+          "layer": "physicalProperties",
+          "zh": "物理属性",
+          "note": "光泽度与粗糙度，决定真实感"
+        },
+        {
+          "layer": "textureScale",
+          "zh": "纹理尺度",
+          "note": "必选。纹理大小符合场景透视"
+        },
+        {
+          "layer": "lightingResponse",
+          "zh": "光照响应",
+          "note": "必选。高光反射按原图光源重算"
+        },
+        {
+          "layer": "edges",
+          "zh": "边缘衔接",
+          "note": "蒙版边界自然收口"
+        },
+        {
+          "layer": "lock",
+          "zh": "锁定声明",
+          "note": "必选。形状不变、蒙版外不变"
+        }
+      ]
+    },
+    "maskProtocol": {
+      "principle": "蒙版是材质修改范围的唯一权威。只换表面材质，不改物体形状结构。",
+      "rules": [
+        "先识别蒙版覆盖的表面属于什么物体，提示词明确点名该表面",
+        "提示词必须包含形状锁定：keep the object's exact shape, geometry and outline unchanged",
+        "提示词结尾必须包含 'Do not alter anything outside the edited area.'"
+      ]
+    },
+    "materialLibrary": [
+      {
+        "zh": "大理石",
+        "en": "polished light marble with soft natural veining and narrow grout lines"
+      },
+      {
+        "zh": "鱼肚白大理石",
+        "en": "Calacatta-style white marble with delicate grey veining, polished finish"
+      },
+      {
+        "zh": "爵士白大理石",
+        "en": "Volakas-style white marble with soft grey flowing veins, polished finish"
+      },
+      {
+        "zh": "洞石",
+        "en": "beige travertine with fine porous linear texture, honed matte finish"
+      },
+      {
+        "zh": "水磨石",
+        "en": "terrazzo with small multicolor chips on a light base, honed finish"
+      },
+      {
+        "zh": "微水泥",
+        "en": "seamless microcement with subtle trowel texture, warm grey, matte finish"
+      },
+      {
+        "zh": "木地板",
+        "en": "warm oak hardwood flooring in wide planks with natural straight grain, matte finish"
+      },
+      {
+        "zh": "深色木地板",
+        "en": "dark walnut hardwood flooring in wide planks with rich straight grain, satin finish"
+      },
+      {
+        "zh": "鱼骨拼木地板",
+        "en": "light oak herringbone parquet flooring with natural grain, matte finish"
+      },
+      {
+        "zh": "木饰面",
+        "en": "warm walnut wood veneer paneling with straight fine grain, matte finish, subtle vertical seams"
+      },
+      {
+        "zh": "橡木饰面",
+        "en": "light white-oak veneer paneling with gentle straight grain, matte finish"
+      },
+      {
+        "zh": "乳胶漆",
+        "en": "smooth matte painted wall in a soft warm off-white"
+      },
+      {
+        "zh": "艺术涂料",
+        "en": "textured lime-wash painted wall with soft cloudy brush variation, matte finish"
+      },
+      {
+        "zh": "墙布",
+        "en": "subtle woven fabric wallcovering in a warm neutral tone, matte finish"
+      },
+      {
+        "zh": "瓷砖",
+        "en": "large-format light grey ceramic tiles with narrow grout lines, satin finish"
+      },
+      {
+        "zh": "仿古砖",
+        "en": "warm terracotta-toned rustic ceramic tiles with soft tonal variation, matte finish"
+      },
+      {
+        "zh": "岩板",
+        "en": "large-format sintered stone slab with subtle stone texture, silky matte finish"
+      },
+      {
+        "zh": "不锈钢",
+        "en": "brushed stainless steel with fine linear brushing and soft anisotropic highlights"
+      },
+      {
+        "zh": "黄铜",
+        "en": "brushed brass with a warm satin sheen"
+      },
+      {
+        "zh": "长虹玻璃",
+        "en": "fluted reeded glass with vertical ribs, softly diffusing what is behind it"
+      },
+      {
+        "zh": "皮革",
+        "en": "cognac-brown full-grain leather with soft sheen and natural creasing"
+      },
+      {
+        "zh": "绒布",
+        "en": "muted velvet upholstery with a soft directional sheen"
+      },
+      {
+        "zh": "羊羔绒",
+        "en": "off-white boucle fabric with a short, densely looped matte texture"
+      },
+      {
+        "zh": "棉麻",
+        "en": "natural linen-cotton weave fabric in a warm neutral tone, matte"
+      },
+      {
+        "zh": "藤编",
+        "en": "natural rattan weave with an open cane pattern, matte finish"
+      },
+      {
+        "zh": "黑色金属",
+        "en": "matte black powder-coated metal with clean edges"
+      }
+    ],
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Replace / Change the ... in the masked area to ... 开头，Match / Preserve 收尾",
+      "length": "50-100 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "绝对物理数值，用相对表述",
+        "negative prompt 语法，改用正向锁定声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层",
+        "items": [
+          "物体几何形状与轮廓",
+          "蒙版外全部内容",
+          "原图光源与色温",
+          "相机角度与透视",
+          "落在该表面上的原有阴影"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "新材质的颜色、纹理、饰面",
+          "该材质应有的接缝/拼板逻辑"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "纹理尺度随透视",
+          "高光反射按原光源",
+          "原有阴影保留",
+          "边界自然收口",
+          "清晰度与颗粒和原图一致"
+        ]
+      }
+    },
+    "failureModes": [
+      {
+        "mode": "材质描述太瘦",
+        "zh": "只写 marble 一个词，模型自由发挥跑偏",
+        "preventionPhrase": "始终从 materialLibrary 展开为 颜色+纹理+饰面 的完整描述"
+      },
+      {
+        "mode": "纹理尺度失真",
+        "zh": "花纹过大过小像贴图",
+        "preventionPhrase": "The texture scale must be physically plausible and follow the scene's perspective."
+      },
+      {
+        "mode": "物体形状被改",
+        "zh": "换材质顺带改造型",
+        "preventionPhrase": "Keep the object's exact shape, geometry and outline unchanged; only the surface material changes."
+      },
+      {
+        "mode": "光照响应缺失",
+        "zh": "新材质像平贴无高光",
+        "preventionPhrase": "Highlights and reflections must come from the room's existing light sources and direction."
+      },
+      {
+        "mode": "材质溢出蒙版",
+        "zh": "渗到相邻表面",
+        "preventionPhrase": "Apply the new material strictly within the edited area with clean edges against adjacent surfaces."
+      },
+      {
+        "mode": "原有阴影丢失",
+        "zh": "环境影被抹掉显得悬浮",
+        "preventionPhrase": "Preserve all existing shadows and ambient occlusion falling on this surface."
+      },
+      {
+        "mode": "接缝逻辑错误",
+        "zh": "该有缝的无缝、无缝的有缝",
+        "preventionPhrase": "Include realistic seams, plank joints or grout lines appropriate to this material, or keep it seamless if the material is monolithic."
+      }
+    ],
+    "tips": [
+      "下拉框直接绑定 materialLibrary，让用户少打字、LLM 少猜",
+      "用户自由输入的生僻材料，LLM 按 颜色+纹理+饰面 格式自行展开，保持同样信息密度",
+      "同一个'大理石'在墙面和地面上的铺贴逻辑不同（竖贴大板 vs 方砖密缝），扩写时结合目标表面调整"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "材料选择：鱼骨拼木地板",
+        "maskContext": "蒙版覆盖客厅整个地面",
+        "expanded_zh": "将蒙版区域的客厅地面改为浅色橡木鱼骨拼木地板：自然直纹、哑光饰面。地面平面与房间透视不变，所有家具原位保留，家具接触阴影落在新地板上。鱼骨拼花的尺度随透视自然收缩，地板受光面按客厅现有窗光与灯光呈现。蒙版外不做任何改动。",
+        "expanded_en": "Change the living-room floor in the masked area to light oak herringbone parquet flooring with natural grain and a matte finish. Keep the floor plane, room perspective and all furniture exactly in place, with contact shadows preserved on the new floor. The herringbone pattern must foreshorten naturally with the room's perspective, and the wood must respond to the existing window light and lamps. Do not alter anything outside the edited area."
+      },
+      {
+        "userInput": "材料输入：微水泥，颜色浅一点",
+        "maskContext": "蒙版覆盖沙发背景墙",
+        "expanded_zh": "将蒙版区域的沙发背景墙改为浅暖灰色微水泥：无缝、带细腻批刮肌理、哑光。墙体几何与轮廓不变，原有挂画阴影与灯光洗墙效果保留在新墙面上，肌理尺度细腻自然不夸张。蒙版外不做任何改动。",
+        "expanded_en": "Change the sofa feature wall in the masked area to seamless microcement in a light warm grey with a subtle trowel texture and matte finish. Keep the wall's geometry and outline unchanged, preserving the existing artwork shadows and the wall-washing light gradient on the new surface. The trowel texture stays fine and understated. Do not alter anything outside the edited area."
+      }
+    ]
+  }
+}

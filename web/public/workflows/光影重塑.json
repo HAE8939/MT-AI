@@ -1,0 +1,210 @@
+{
+  "meta": {
+    "id": "relight-degray",
+    "version": "1.1",
+    "name": "光影重塑",
+    "description": "一键去灰提亮、优化光影、重塑通透质感。用户上传原图，可选填提示词（不想出太阳光写'阴天'，或写'黄昏'等天气词）。无参考图，按内置的默认光影配方重打光。UI 建议处理后搭配『质感增强』使用。",
+    "taskType": "full-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "UI 说明的关键约束：原图已有强太阳光时该功能无法去除——扩写时不承诺移除已有阳光，只做提亮通透",
+      "与『光影大师』的区别：无参考图，走内置默认配方（通透明亮+柔和阳光），用户天气词切换配方"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "none",
+    "refImages": 0,
+    "userText": "optional",
+    "extraFields": []
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "去灰声明 + 天气/光型配方(默认或用户词) + 通透感构建 + 白平衡矫正 + 对比与层次 + 全要素锁定 + 写实声明",
+      "layers": [
+        {
+          "layer": "degray",
+          "zh": "去灰声明",
+          "note": "必选。清除灰蒙感：lift the dull grey haze, restore clean bright exposure"
+        },
+        {
+          "layer": "weatherProfile",
+          "zh": "天气配方",
+          "note": "用户给天气词按 weatherProfiles 切换；未填时用默认配方 default-bright"
+        },
+        {
+          "layer": "clarity",
+          "zh": "通透感",
+          "note": "必选。空气通透、材质干净：crisp clean air, materials look freshly clear"
+        },
+        {
+          "layer": "whiteBalance",
+          "zh": "白平衡",
+          "note": "矫正偏色，白墙归白：neutral accurate white balance, whites read as true white"
+        },
+        {
+          "layer": "contrast",
+          "zh": "对比层次",
+          "note": "亮暗拉开但都保细节，避免灰片也避免过曝"
+        },
+        {
+          "layer": "lock",
+          "zh": "全要素锁定",
+          "note": "必选。布局、家具、材质固有色、构图全部不变"
+        },
+        {
+          "layer": "realism",
+          "zh": "写实声明",
+          "note": "必选。photorealistic interior photograph"
+        }
+      ]
+    },
+    "weatherProfiles": {
+      "note": "用户提示词中的天气关键词映射到配方；命中多个时取最后一个；未命中且非空时让 LLM 按同格式自行展开",
+      "profiles": [
+        {
+          "keyword": "默认（无输入）",
+          "id": "default-bright",
+          "en": "bright airy daylight fills the room, with gentle warm sunlight entering from the windows, soft-edged light patches on the floor, crisp and transparent atmosphere"
+        },
+        {
+          "keyword": "阴天",
+          "id": "overcast",
+          "en": "soft evenly diffused overcast daylight, shadowless and clean, cool-neutral tone, calm and airy — no direct sunlight or sun patches anywhere"
+        },
+        {
+          "keyword": "黄昏",
+          "id": "golden-dusk",
+          "en": "warm golden-hour light at a low angle from the windows, amber highlights, long soft light patches, cozy dusk atmosphere"
+        },
+        {
+          "keyword": "夜晚",
+          "id": "night",
+          "en": "deep blue dusk outside the windows, the room lit warmly by its own fixtures with gentle pools of light and soft falloff"
+        },
+        {
+          "keyword": "清晨",
+          "id": "morning",
+          "en": "fresh early-morning light, cool-tinted soft sunlight entering at a low angle, clean bright and quiet atmosphere"
+        }
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Rebalance and relight ... 开头，Keep / Preserve 收尾",
+      "length": "50-100 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "承诺移除原图已有阳光的表述（该能力不可靠）",
+        "negative prompt 语法；'阴天'配方用正向表述 no direct sunlight 已内置"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层",
+        "items": [
+          "房间布局与全部家具",
+          "材质与固有色",
+          "装饰品",
+          "相机角度与构图",
+          "窗外景色内容"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "干净明亮的曝光",
+          "配方指定的光型",
+          "准确白平衡",
+          "通透空气感"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "提亮不过曝、白不死白",
+          "阴影变浅但仍有方向感",
+          "材质固有色不因提亮而漂移",
+          "窗内外亮度关系自然",
+          "画面整体干净不脏灰"
+        ]
+      }
+    },
+    "failureModes": [
+      {
+        "mode": "过曝洗白",
+        "zh": "提亮过头，白墙死白、细节丢失",
+        "preventionPhrase": "Brighten without clipping: whites stay detailed, highlights remain soft."
+      },
+      {
+        "mode": "固有色漂移",
+        "zh": "去灰顺带改了材质颜色",
+        "preventionPhrase": "Materials keep their intrinsic colors; only exposure, white balance and light change."
+      },
+      {
+        "mode": "内容漂移",
+        "zh": "重打光时家具装饰被改",
+        "preventionPhrase": "Keep the layout, every piece of furniture and all decor exactly unchanged."
+      },
+      {
+        "mode": "阳光乱入",
+        "zh": "用户要阴天却出现太阳光斑",
+        "preventionPhrase": "阴天配方内置 no direct sunlight or sun patches anywhere"
+      },
+      {
+        "mode": "平光无层次",
+        "zh": "去灰后整图均匀亮，无光影方向",
+        "preventionPhrase": "Preserve a gentle sense of light direction and soft shadows for depth."
+      },
+      {
+        "mode": "窗外过曝",
+        "zh": "室内提亮把窗外冲成白板",
+        "preventionPhrase": "The view outside the windows stays visible and naturally exposed."
+      }
+    ],
+    "tips": [
+      "本功能定位『洗图』第一步，输出建议引导用户接『质感增强』再接『高清放大』",
+      "原图有强太阳光又想去除时，引导用户换『室内氛围转换』模式二或全能编辑",
+      "天气词只认单词级输入，长句中提取天气关键词后其余内容作为补充约束"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "（无输入）",
+        "expanded_zh": "为这张室内图去灰重塑光影：清除灰蒙感，恢复干净明亮的曝光与准确白平衡，白墙归真白。明亮通透的白天光充满房间，柔和的暖阳从现有窗户入室，地板上留下软边光斑，空气感干净透亮，亮暗层次拉开但均保留细节，阴影浅而有方向。房间布局、全部家具、材质固有色、装饰与相机角度完全不变。写实室内摄影质感。",
+        "expanded_en": "Rebalance and relight this interior: lift the dull grey haze and restore a clean bright exposure with accurate neutral white balance, whites reading as true white. Bright airy daylight fills the room, with gentle warm sunlight entering from the existing windows and soft-edged light patches on the floor, giving a crisp transparent atmosphere. Open up the tonal range while keeping highlights soft and shadows readable with a gentle sense of direction. Keep the layout, every piece of furniture, the materials' intrinsic colors, decor and camera angle exactly unchanged. Photorealistic interior photograph."
+      },
+      {
+        "userInput": "阴天",
+        "expanded_zh": "为这张室内图去灰重塑光影：清除灰蒙感，恢复干净明亮的曝光与准确白平衡。采用阴天配方：柔和均匀的漫射天光，无直射阳光、无光斑，冷中性色调，画面安静通透。亮部干净、暗部可读，保留轻微的光照方向感。房间布局、家具、材质固有色与相机角度完全不变。写实室内摄影质感。",
+        "expanded_en": "Rebalance and relight this interior: lift the dull grey haze and restore a clean bright exposure with accurate white balance. Use a soft overcast profile: evenly diffused daylight, cool-neutral in tone, calm and airy, with no direct sunlight or sun patches anywhere. Whites stay detailed, shadows shallow yet readable with a gentle sense of direction. Keep the layout, all furniture, the materials' intrinsic colors and the camera angle exactly unchanged. Photorealistic interior photograph."
+      }
+    ]
+  }
+}

@@ -53,7 +53,53 @@ export type LocalWorkflowSpec = {
     inputs: LocalWorkflowInputSlot[];
 };
 
-export type AgentTemplateSpec = DocAnalysisSpec | RunningHubSpec | CanvasTemplateSpec | LocalWorkflowSpec;
+/** 提示词引擎工作流的任务类型（决定生成走 edits 还是 generations，upscale 为特殊路由） */
+export type PromptEngineTaskType = "masked-edit" | "full-edit" | "generate" | "upscale" | "multi-output" | "vision-analysis";
+
+/** 提示词引擎工作流 JSON 配置里的额外表单项（下拉框 / 选项卡等） */
+export type PromptEngineExtraField = {
+    key: string;
+    type: string;
+    label_zh: string;
+    options?: string[];
+    default?: string | number;
+};
+
+/** 提示词引擎工作流 JSON 配置（workflows/*.json，三层结构：meta 管路由，inputSpec/outputSpec 管交互，promptEngine 管效果） */
+export type PromptEngineWorkflowConfig = {
+    meta: {
+        id: string;
+        version?: string;
+        name: string;
+        description?: string;
+        taskType: PromptEngineTaskType;
+        targetModel?: string;
+        endpoint?: string;
+        references?: string[];
+    };
+    inputSpec: {
+        image: "required" | "optional" | "none";
+        mask: "required" | "optional" | "none";
+        refImages: number;
+        refImagesOptional?: boolean;
+        userText: "required" | "optional" | "none";
+        extraFields?: PromptEngineExtraField[];
+    };
+    outputSpec: {
+        type: "image" | "images" | "text" | "file";
+        count: number;
+    };
+    /** 提示词引擎知识库：整体作为 System Prompt 注入扩写 LLM，前端不解析内部结构 */
+    promptEngine: Record<string, unknown>;
+};
+
+/** 提示词引擎工作流：JSON 知识库驱动「LLM 扩写 → 图像生成」，用户一句话出专业效果图 */
+export type PromptEngineSpec = {
+    kind: "prompt-engine";
+    config: PromptEngineWorkflowConfig;
+};
+
+export type AgentTemplateSpec = DocAnalysisSpec | RunningHubSpec | CanvasTemplateSpec | LocalWorkflowSpec | PromptEngineSpec;
 
 export type AgentTemplate = {
     id: string;

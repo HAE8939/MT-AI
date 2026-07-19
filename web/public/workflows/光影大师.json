@@ -1,0 +1,223 @@
+{
+  "meta": {
+    "id": "lighting-master",
+    "version": "1.1",
+    "name": "光影大师",
+    "description": "用户上传原图和一张光影参考图，无文字输入。LLM 只提炼参考图的光影特征（方向、软硬、色温、对比、时段），迁移到原图：空间、家具、材质、色彩固有色全部锁定，是所有参考图工作流中改动范围最小、最纯粹的光照迁移。",
+    "taskType": "full-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "与『室内氛围转换』的区别：氛围转换含色调情绪整体调色；光影大师只做光照重打，连色调风格都尽量贴近原图，适合渲染图补光、废片救光",
+      "与『光影重塑』的区别：光影重塑无参考图、走默认去灰提亮配方；光影大师由参考图精确指定目标光型"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "none",
+    "refImages": 1,
+    "userText": "none",
+    "extraFields": []
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "光型提炼(参考图) + 主光方向与入口 + 光质软硬 + 色温 + 阴影行为 + 明暗分布 + 全要素锁定 + 写实声明",
+      "layers": [
+        {
+          "layer": "lightProfile",
+          "zh": "光型提炼",
+          "note": "核心步骤。把参考图光影翻译成语言：主光类型（侧窗直射阳光/漫射天光/顶部人工光）、时段感、戏剧性程度"
+        },
+        {
+          "layer": "direction",
+          "zh": "主光方向",
+          "note": "必选。光从画面哪个方向来，且必须借用原图已有的窗/灯作为入口，逻辑自洽"
+        },
+        {
+          "layer": "quality",
+          "zh": "光质软硬",
+          "note": "硬光（清晰光斑与锐利阴影）或软光（柔和渐变），是光影气质的决定项"
+        },
+        {
+          "layer": "colorTemp",
+          "zh": "色温",
+          "note": "光本身的冷暖，不改变材质固有色"
+        },
+        {
+          "layer": "shadowBehavior",
+          "zh": "阴影行为",
+          "note": "阴影方向统一、长度与光源角度匹配、边缘软硬与光质一致"
+        },
+        {
+          "layer": "tonalMap",
+          "zh": "明暗分布",
+          "note": "哪里亮哪里暗：窗边亮区渐变到内侧暗区，形成空间层次"
+        },
+        {
+          "layer": "lock",
+          "zh": "全要素锁定",
+          "note": "必选。布局、家具、材质、固有色、构图、相机角度全部不变"
+        },
+        {
+          "layer": "realism",
+          "zh": "写实声明",
+          "note": "必选。physically believable light behavior"
+        }
+      ]
+    },
+    "referenceProtocol": {
+      "imageOrder": "第一张图=待重打光的原图，第二张图=光影参考图。",
+      "extraction": [
+        "只提取参考图的光影属性：方向、软硬、色温、对比度、光斑形态（窗格影/百叶影/树影）、时段",
+        "绝不提取参考图的：空间、家具、材质、色彩风格、构图",
+        "光斑形态可以迁移（如参考图有窗格光斑，可让原图窗户投下类似光斑），但必须匹配原图窗型"
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Relight the scene ... 开头，Keep / Preserve 收尾",
+      "length": "60-110 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "改变材质固有色或风格的表述",
+        "negative prompt 语法，改用正向锁定声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层",
+        "items": [
+          "房间布局与全部家具",
+          "材质与固有色",
+          "装饰品",
+          "相机角度与构图",
+          "窗外景色内容（亮度可随光照调整）"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "新的主光方向与入口",
+          "新的光质与色温",
+          "新的阴影系统",
+          "新的明暗层次"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "光入口与原图窗/灯位置自洽",
+          "所有阴影方向统一",
+          "材质按本性响应新光（镜面/漫反射）",
+          "光斑透视与窗型匹配",
+          "亮不过曝、暗有细节"
+        ]
+      }
+    },
+    "lightProfiles": {
+      "note": "常见光型速查，供 LLM 对参考图分类后展开",
+      "profiles": [
+        {
+          "id": "morning-side-sun",
+          "en": "low warm morning sunlight entering from the side windows, casting long soft-edged light patches across the floor"
+        },
+        {
+          "id": "midday-diffuse",
+          "en": "bright neutral midday daylight, softly diffused, filling the room evenly with gentle shadows"
+        },
+        {
+          "id": "golden-hour",
+          "en": "warm golden-hour sunlight at a low angle, dramatic elongated window-frame light patches, amber highlights and deep soft shadows"
+        },
+        {
+          "id": "overcast-soft",
+          "en": "cool overcast skylight, shadowless and evenly diffused, calm and airy"
+        },
+        {
+          "id": "blinds-pattern",
+          "en": "hard directional sunlight through blinds, casting rhythmic striped light patterns on walls and floor"
+        },
+        {
+          "id": "evening-artificial",
+          "en": "warm layered artificial lighting from the room's own fixtures, pools of light with gentle falloff, dark blue dusk outside"
+        }
+      ]
+    },
+    "failureModes": [
+      {
+        "mode": "光源逻辑矛盾",
+        "zh": "光的方向与原图窗/灯位置对不上",
+        "preventionPhrase": "The new light must enter through the room's existing windows and fixtures, from a physically consistent direction."
+      },
+      {
+        "mode": "固有色被改",
+        "zh": "重打光顺带改了材质颜色",
+        "preventionPhrase": "Materials keep their intrinsic colors and finishes; only the illumination changes."
+      },
+      {
+        "mode": "阴影方向混乱",
+        "zh": "多个物体阴影朝向不一致",
+        "preventionPhrase": "All shadows share one consistent direction and softness matching the main light."
+      },
+      {
+        "mode": "光斑透视错误",
+        "zh": "窗格光斑形状与窗型/地面透视不符",
+        "preventionPhrase": "Light patches follow the actual window shapes and foreshorten correctly along the floor's perspective."
+      },
+      {
+        "mode": "内容漂移",
+        "zh": "家具/装饰被改动",
+        "preventionPhrase": "Keep the layout, every piece of furniture and all decor exactly unchanged."
+      },
+      {
+        "mode": "过曝死黑",
+        "zh": "为戏剧化牺牲细节",
+        "preventionPhrase": "Highlights stay detailed and shadow areas remain readable."
+      },
+      {
+        "mode": "滤镜感",
+        "zh": "只变色调没变光",
+        "preventionPhrase": "The change comes from directional light and real shadows, not a uniform color wash."
+      }
+    ],
+    "tips": [
+      "参考图选光影戏剧性明显的图，迁移收益最大；光影平淡的参考图建议直接用『光影重塑』",
+      "原图若已有强烈太阳光，反向迁移成阴天软光的成功率较低，可提示用户预期",
+      "扩写时光的方向描述要落到画面方位（from the left-side windows），不要只写抽象时段"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "（无文字输入）",
+        "refImageContext": "参考图为午后阳光透过窗户在地板拉出清晰窗格光斑的卧室",
+        "expanded_zh": "为原图重新打光：温暖的午后阳光从右侧现有窗户斜射入室，在地板与床面投下清晰的窗格形光斑，光斑形状匹配原图窗型并随地面透视收缩。光质偏硬、色温暖，阴影方向统一、边缘干净，靠窗处明亮、房间内侧渐暗形成层次。房间布局、全部家具、材质固有色、装饰与相机角度完全不变，材质只按本性响应新光。亮部保留细节、暗部可读。物理可信的写实光照。",
+        "expanded_en": "Relight the scene with warm afternoon sunlight entering through the existing windows on the right, casting crisp window-frame light patches across the floor and bed. The patches follow the actual window shapes and foreshorten naturally along the floor's perspective. The light is fairly hard and warm in temperature, with all shadows sharing one consistent direction and clean edges, bright near the windows and gently darkening toward the room's interior. Keep the layout, every piece of furniture, the materials' intrinsic colors, decor and camera angle exactly unchanged — surfaces respond to the new light only. Highlights stay detailed and shadows readable. Physically believable, photorealistic lighting."
+      }
+    ]
+  }
+}

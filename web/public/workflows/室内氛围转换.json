@@ -1,0 +1,233 @@
+{
+  "meta": {
+    "id": "interior-mood-transfer",
+    "version": "1.1",
+    "name": "室内氛围转换",
+    "description": "用户上传原图和一张氛围参考图，可补充提示词。系统自动识别参考图的光影、氛围、色调，将其迁移到原图上：空间结构、家具、材质全部不变，只换『光和情绪』。UI 提供模式一/模式二两档强度。",
+    "taskType": "full-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "本质是把 localbanana.io 7要素中的 Lighting + Color 两要素从参考图抽出来移植，其余五要素全部锁定",
+      "模式一/模式二为强度档位：模式一只迁移光影与色调（保守），模式二允许连同天空/窗外时段、灯具开关状态一起改（激进）。此判断为实现假设，可按实测调整"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "none",
+    "refImages": 1,
+    "userText": "optional",
+    "extraFields": [
+      {
+        "key": "mode",
+        "type": "select",
+        "label_zh": "模式",
+        "options": [
+          "模式一（光影色调迁移）",
+          "模式二（含窗外时段与灯光状态）"
+        ],
+        "default": "模式一（光影色调迁移）"
+      }
+    ]
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "氛围提炼(参考图) + 光源方向与软硬 + 色温色调 + 明暗对比与曝光 + (模式二:窗外时段/灯光状态) + 结构材质锁定 + 写实声明",
+      "layers": [
+        {
+          "layer": "moodExtraction",
+          "zh": "氛围提炼",
+          "note": "核心步骤。把参考图的氛围翻译成语言：时段（清晨/黄昏/夜晚/阴天）、光源类型（侧窗光/顶光/灯光主导）、情绪（温馨/清冷/静谧/戏剧化）"
+        },
+        {
+          "layer": "lightDirection",
+          "zh": "光源方向与软硬",
+          "note": "参考图的主光方向与阴影软硬，落到原图空间里要合理（窗在哪光从哪来）"
+        },
+        {
+          "layer": "colorGrade",
+          "zh": "色温色调",
+          "note": "整体色温（warm amber / cool blue-grey）、高光与阴影的分离调色"
+        },
+        {
+          "layer": "contrast",
+          "zh": "明暗与曝光",
+          "note": "参考图的对比风格：通透明亮 / 低调深邃 / 柔和平光"
+        },
+        {
+          "layer": "modeTwo",
+          "zh": "模式二扩展",
+          "note": "仅模式二：窗外天色时段同步变化、场景灯具随氛围开或关"
+        },
+        {
+          "layer": "lock",
+          "zh": "结构材质锁定",
+          "note": "必选。房间布局、家具位置、材质颜色本色、相机角度全部不变"
+        },
+        {
+          "layer": "realism",
+          "zh": "写实声明",
+          "note": "必选。photorealistic interior photograph，光影过渡自然"
+        }
+      ]
+    },
+    "referenceProtocol": {
+      "imageOrder": "第一张图=待转换原图，第二张图=氛围参考图。提示词不直接要求复制参考图内容，而是把提炼出的氛围用语言重建。",
+      "extraction": [
+        "只提取参考图的：光的方向/软硬/色温、时段感、明暗对比、色调倾向、情绪关键词",
+        "绝不提取参考图的：空间布局、家具、材质、装饰品、构图",
+        "用户补充提示词优先级最高，可覆盖提炼结果（如用户写'夜晚氛围'则按夜晚）"
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Relight the interior ... / Transform the mood ... 开头，Keep / Preserve 收尾",
+      "length": "60-110 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "提及 'the second image' 之外的图片编号混乱表述；氛围描述必须已文字化，不依赖模型自己看参考图",
+        "negative prompt 语法，改用正向锁定声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层",
+        "items": [
+          "房间布局与结构",
+          "全部家具与位置",
+          "材质与固有色",
+          "装饰品",
+          "相机角度与构图",
+          "（模式一）窗外景色与灯具状态"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "新的光源方向与软硬",
+          "新的色温色调",
+          "新的明暗对比与情绪",
+          "（模式二）窗外时段、灯具开关状态"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "光的来向与窗/灯位置逻辑自洽",
+          "材质在新光下的正确响应（亮面反光、哑光洗光）",
+          "阴影方向统一",
+          "白平衡整体一致",
+          "亮部不过曝、暗部有细节"
+        ]
+      }
+    },
+    "moodVocabulary": {
+      "timeOfDay": [
+        "early morning soft light",
+        "bright midday daylight",
+        "golden hour warm glow",
+        "dusk blue hour",
+        "cozy evening lamplight",
+        "overcast diffused daylight"
+      ],
+      "emotion": [
+        "warm and cozy",
+        "calm and serene",
+        "bright and airy",
+        "moody and intimate",
+        "quiet and cinematic",
+        "fresh and clean"
+      ],
+      "grade": [
+        "warm amber tones",
+        "cool blue-grey tones",
+        "neutral daylight balance",
+        "soft pastel grade",
+        "rich low-key contrast",
+        "airy high-key brightness"
+      ]
+    },
+    "failureModes": [
+      {
+        "mode": "结构漂移",
+        "zh": "换氛围时家具/布局被改",
+        "preventionPhrase": "Keep the room layout, all furniture, materials and decor exactly as they are; only the lighting and color mood change."
+      },
+      {
+        "mode": "光源逻辑矛盾",
+        "zh": "窗在左光从右来",
+        "preventionPhrase": "The new light enters from the existing windows and fixtures, consistent with the room's real light sources."
+      },
+      {
+        "mode": "固有色被改",
+        "zh": "调色顺带把沙发从灰变蓝",
+        "preventionPhrase": "Materials keep their intrinsic colors; only the light falling on them changes."
+      },
+      {
+        "mode": "滤镜感",
+        "zh": "整体套了一层色罩，无光影方向变化",
+        "preventionPhrase": "The mood comes from directional light and shadow, not a uniform color filter."
+      },
+      {
+        "mode": "过曝/死黑",
+        "zh": "氛围极端化丢细节",
+        "preventionPhrase": "Highlights stay detailed and shadows remain readable."
+      },
+      {
+        "mode": "窗内外时段矛盾",
+        "zh": "室内夜灯氛围但窗外还是正午",
+        "preventionPhrase": "（模式二）The view outside the windows matches the new time of day.（模式一则锁定窗外不变并选择兼容氛围）"
+      },
+      {
+        "mode": "构图漂移",
+        "zh": "相机角度/裁切变化",
+        "preventionPhrase": "Same camera angle, framing and perspective as the original."
+      }
+    ],
+    "tips": [
+      "参考图选光影特征明显的（斜阳入窗、夜晚灯光），迁移效果最明显",
+      "模式一适合白天氛围间的转换；涉及昼夜切换时引导用户用模式二",
+      "扩写时先写目标氛围是什么，再写光从哪来，最后写锁定，信息密度集中在光的描述上"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "补充提示词：（空）；模式一",
+        "refImageContext": "参考图为黄昏斜阳照进客厅的暖调照片",
+        "expanded_zh": "将原图客厅的氛围转换为黄昏金色时刻：低角度的暖金色阳光从现有窗户斜射入室，在地板和沙发上拉出柔和的长光斑，整体色温转暖琥珀调，阴影加深但保留细节，情绪温暖静谧。房间布局、全部家具、材质固有色、装饰与相机角度完全不变，材质只是在新光线下自然响应。写实室内摄影质感，光影过渡自然。",
+        "expanded_en": "Relight the interior with a golden-hour dusk mood: low warm sunlight slants in through the existing windows, casting soft elongated patches of light across the floor and sofa. Shift the overall grade to warm amber tones with deeper yet readable shadows, creating a calm, intimate atmosphere. Keep the room layout, all furniture, the materials' intrinsic colors, decor and camera angle exactly as they are — the surfaces simply respond to the new light. Photorealistic interior photograph with natural light falloff and smooth tonal transitions."
+      },
+      {
+        "userInput": "补充提示词：夜晚温馨一点；模式二",
+        "refImageContext": "参考图为夜晚开灯的卧室",
+        "expanded_zh": "将原图转换为温馨的夜晚氛围：窗外天色变为深蓝夜色，室内改由现有灯具主导照明——台灯与吊灯发出温暖光晕，墙面和织物被暖光柔和洗亮，明暗对比低调而亲密，整体色调暖黄。房间布局、家具、材质固有色与相机角度完全不变。写实夜景室内摄影，光源亮而不曝，暗部保留细节。",
+        "expanded_en": "Transform the scene into a cozy nighttime mood: the view outside the windows becomes deep blue night, and the room is now lit by its existing fixtures — the lamps and pendant glow warmly, washing the walls and fabrics in soft amber light with low, intimate contrast. Keep the room layout, all furniture, the materials' intrinsic colors and the camera angle exactly unchanged. Photorealistic night interior photograph, light sources bright but never blown out, shadows retaining gentle detail."
+      }
+    ]
+  }
+}

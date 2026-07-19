@@ -6,10 +6,10 @@ import { useLocalWorkflowRun } from "@/components/workflow/use-local-workflow-ru
 import type { AgentTemplate } from "@/types/workflow";
 
 // 画布侧栏本地工作流运行视图：填输入槽 → 立即运行，底部显示串跑进度。
-// 图片槽支持选画布节点或本地上传（≤30MB）；文本槽直接填内容。
+// 图片槽支持选画布节点或本地上传（≤10MB）；文本槽直接填内容。
 
 type Theme = (typeof canvasThemes)[keyof typeof canvasThemes];
-const MAX_UPLOAD_BYTES = 30 * 1024 * 1024;
+const MAX_UPLOAD_BYTES = 10 * 1024 * 1024;
 
 export function LocalWorkflowRunPanel({ template, theme, onBack }: { template: AgentTemplate; theme: Theme; onBack: () => void }) {
     const { message } = App.useApp();
@@ -56,7 +56,7 @@ export function LocalWorkflowRunPanel({ template, theme, onBack }: { template: A
                                         accept="image/*"
                                         showUploadList={false}
                                         beforeUpload={(file) => {
-                                            if (file.size > MAX_UPLOAD_BYTES) message.error("图片超过 30MB，请压缩后再试");
+                                            if (file.size > MAX_UPLOAD_BYTES) message.error("图片超过 10MB，请压缩后再试");
                                             else setSlotImage(slot.nodeId, file);
                                             return Upload.LIST_IGNORE;
                                         }}

@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { App } from "antd";
 
 import { useAgentStore } from "@/stores/use-agent-store";
-import { uploadImage } from "@/services/image-storage";
+import { getImageBlob, uploadImage } from "@/services/image-storage";
 import { CanvasNodeType } from "@/types/canvas";
 import type { CanvasAgentOp } from "@/lib/canvas/canvas-agent-ops";
 import { relinkStep, remapSnapshotIds, topoSortStepNodes } from "@/lib/canvas/local-workflow";
@@ -12,6 +12,13 @@ import type { AgentTemplate, LocalWorkflowSpec } from "@/types/workflow";
 // 逐步 await runGenerationAndWait，每步跑完把下游连线从占位结果重连到实际产出。全程走 canvasContext.applyOps。
 
 export type LocalWorkflowLocalFile = { file: File; previewUrl: string };
+
+// 图片体积上限：防止第三方 API 因图片过大而处理失败
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
+function checkImageSize(blob: { size: number }, label: string) {
+    if (blob.size > MAX_IMAGE_BYTES) throw new Error(`${label}超过 10MB，请压缩后再提交`);
+}
 
 export function useLocalWorkflowRun(template: AgentTemplate | null) {
     const { message } = App.useApp();
@@ -86,13 +93,19 @@ export function useLocalWorkflowRun(template: AgentTemplate | null) {
                 if (slot.kind === "image") {
                     const local = localFiles[slot.nodeId];
                     if (local) {
+                        checkImageSize(local.file, `「${slot.label}」`);
                         const uploaded = await uploadImage(local.file, { fileName: local.file.name || "input.png" });
                         slotPatch.set(newId, { content: uploaded.url, storageKey: uploaded.storageKey });
                     } else {
                         const raw = (slotValues[slot.nodeId] || "").trim();
                         if (raw) {
                             const node = canvasImageNodes.find((item) => item.metadata?.content === raw);
-                            slotPatch.set(newId, { content: raw, storageKey: node?.metadata?.storageKey });
+                            const storageKey = node?.metadata?.storageKey;
+                            if (storageKey) {
+                                const blob = await getImageBlob(storageKey);
+                                if (blob) checkImageSize(blob, `「${slot.label}」`);
+                            }
+                            slotPatch.set(newId, { content: raw, storageKey });
                         }
                     }
                 } else {

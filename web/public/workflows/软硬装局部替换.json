@@ -1,0 +1,223 @@
+{
+  "meta": {
+    "id": "furnishing-replace",
+    "version": "1.1",
+    "name": "软硬装局部替换",
+    "description": "用户上传原图并涂抹蒙版遮盖要替换的物体，再上传目标物体参考图（产品图或白底图），并输入物体名称（沙发/地毯/电视柜/电视墙等）。LLM 提炼参考物体的可语言化特征，扩写为英文编辑提示词，驱动 gpt-image-1 将蒙版内旧物体替换为参考物体，并按场景透视与光照重新融合。",
+    "taskType": "masked-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "与『指定材质替换』的区别：这里替换的是整个物体（形状会变），不是表面材质",
+      "参考图多为产品白底图，拍摄角度与场景不一致是常态——必须指令模型按场景透视重新摆放物体，而不是把参考图贴进去"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "required",
+    "refImages": 1,
+    "userText": "required",
+    "extraFields": [
+      {
+        "key": "objectName",
+        "type": "input",
+        "label_zh": "输入物体名称",
+        "note": "如：沙发、地毯、电视柜、电视墙、椅子"
+      }
+    ]
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "移除旧物 + 参考物身份(外形/颜色/材质) + 透视重摆 + 尺度匹配 + 落地接触与阴影 + 光照匹配 + 背景补全 + 锁定声明",
+      "layers": [
+        {
+          "layer": "removal",
+          "zh": "移除旧物",
+          "note": "明确替换语义：the existing … is replaced by …，蒙版内旧物体连同其可见部分一起消失"
+        },
+        {
+          "layer": "objectIdentity",
+          "zh": "参考物身份",
+          "note": "从参考图提炼：品类+造型特征+颜色+材质+腿脚/底座细节，忠实还原产品特征"
+        },
+        {
+          "layer": "reorientation",
+          "zh": "透视重摆",
+          "note": "必选。按场景相机角度重新摆放参考物体：re-render it from the scene's camera angle，绝不平贴参考图"
+        },
+        {
+          "layer": "scale",
+          "zh": "尺度匹配",
+          "note": "必选。物体尺寸与房间和周边家具比例可信"
+        },
+        {
+          "layer": "grounding",
+          "zh": "落地接触",
+          "note": "必选。与地面/墙面的接触真实，带柔和接触阴影"
+        },
+        {
+          "layer": "lighting",
+          "zh": "光照匹配",
+          "note": "必选。受光方向、色温、高光与场景一致，忽略参考图自带光照"
+        },
+        {
+          "layer": "inpaint",
+          "zh": "背景补全",
+          "note": "新物体比旧物体小时，露出的背景（墙面/地板）按周围内容自然补全"
+        },
+        {
+          "layer": "lock",
+          "zh": "锁定声明",
+          "note": "必选。蒙版外一切不变"
+        }
+      ]
+    },
+    "maskProtocol": {
+      "principle": "蒙版必须完整覆盖旧物体及其阴影，替换后的新物体也必须落在蒙版内。",
+      "rules": [
+        "结合用户输入的物体名称与蒙版位置，确认被替换物体；名称与蒙版内容矛盾时以蒙版实际内容为准，并在返回中注明",
+        "蒙版没盖住旧物体的一部分时（如沙发扶手露在外面），提示词仍按整体替换写，但提醒前端引导用户涂全",
+        "新物体的朝向遵循旧物体的朝向逻辑（沙发面向电视、床头靠墙）",
+        "提示词结尾必须包含 'Do not alter anything outside the edited area.'"
+      ]
+    },
+    "referenceProtocol": {
+      "imageOrder": "第一张图=待编辑场景原图，第二张图=目标物体参考图。提示词中用 'the … shown in the second image' 指代。",
+      "extraction": [
+        "提炼参考物体：品类、整体造型（直排/L型/圆形）、颜色、主材质、显著细节（金属细腿、拉扣、圆角）",
+        "忽略参考图的背景、拍摄光照与角度，只保留物体本身的设计特征",
+        "用户文字与参考图冲突时以参考图为准，文字仅作类别与摆放意图的辅助"
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Replace the ... in the masked area with the ... shown in the second image 开头，Match / Preserve 收尾",
+      "length": "60-110 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "绝对物理数值（沙发2.8米），用 proportionate to the room 等相对表述",
+        "negative prompt 语法，改用正向锁定声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层",
+        "items": [
+          "蒙版外全部内容",
+          "房间结构与透视",
+          "原图光源与色温",
+          "地面/墙面延续性",
+          "周边家具与饰品"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "参考物体的造型/颜色/材质",
+          "物体的合理朝向",
+          "新物体的接触阴影"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "按场景相机角度重摆物体",
+          "尺度与房间比例可信",
+          "受光方向与色温一致",
+          "接触阴影与场景阴影风格一致",
+          "露出背景的自然补全",
+          "清晰度与颗粒和原图一致"
+        ]
+      }
+    },
+    "failureModes": [
+      {
+        "mode": "平贴参考图",
+        "zh": "参考图角度直接贴入，透视错乱",
+        "preventionPhrase": "Re-render the reference object from the scene's own camera angle and perspective; do not paste the reference photo."
+      },
+      {
+        "mode": "尺度失真",
+        "zh": "新物体过大或过小",
+        "preventionPhrase": "The object's size must be proportionate to the room and the surrounding furniture."
+      },
+      {
+        "mode": "悬浮/无接触影",
+        "zh": "物体浮在地面上",
+        "preventionPhrase": "It sits firmly on the floor with soft natural contact shadows."
+      },
+      {
+        "mode": "旧物残影",
+        "zh": "旧物体轮廓或阴影残留",
+        "preventionPhrase": "The previous object and its shadow are completely removed, with the revealed background filled in naturally."
+      },
+      {
+        "mode": "带入参考图光照",
+        "zh": "产品图的影棚光被带进场景",
+        "preventionPhrase": "Light the object entirely by the scene's existing light direction and color temperature, ignoring the reference photo's lighting."
+      },
+      {
+        "mode": "产品特征漂移",
+        "zh": "生成的物体和参考款式不像",
+        "preventionPhrase": "Faithfully keep the reference object's shape, color, material and distinctive design details."
+      },
+      {
+        "mode": "朝向错误",
+        "zh": "沙发背对电视、椅子面壁",
+        "preventionPhrase": "Orient the object naturally for the room's layout, facing the same way the original did."
+      },
+      {
+        "mode": "背景补全穿帮",
+        "zh": "新物体较小后露出的区域纹理错乱",
+        "preventionPhrase": "Extend the existing floor and wall surfaces seamlessly where the new object no longer covers them."
+      }
+    ],
+    "tips": [
+      "前端引导：蒙版要把旧物体连同它的投影一起涂进去，否则旧影子会留在新物体旁边",
+      "参考图优先用白底产品图或45度角产品图，特征提炼最稳",
+      "电视墙这类『硬装』替换本质是造型+材质同换，扩写时把墙体范围与收口写清楚"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "物体名称：沙发",
+        "maskContext": "蒙版覆盖旧布艺沙发及其地面投影",
+        "refImageContext": "参考图为米白色羊羔绒圆润造型三人沙发、黑色金属细腿的白底产品图",
+        "expanded_zh": "将蒙版区域的旧沙发替换为第二张图所示沙发：米白色羊羔绒面料、圆润饱满造型、黑色金属细腿的三人位。按场景相机角度重新呈现该沙发，朝向与原沙发一致，尺寸与房间及周边家具比例可信，沙发腿稳稳落地并带柔和接触阴影。受光方向与色温完全遵循客厅现有光照，忽略产品图光照。旧沙发及其影子彻底消除，露出的地面自然延续。蒙版外不做任何改动。",
+        "expanded_en": "Replace the sofa in the masked area with the sofa shown in the second image: a three-seat design in off-white boucle fabric with a rounded plump silhouette and slim black metal legs. Re-render it from the scene's own camera angle, facing the same way as the original, sized proportionately to the room and surrounding furniture, its legs firmly grounded with soft contact shadows. Light it entirely by the living room's existing light direction and color temperature, ignoring the product photo's lighting. The previous sofa and its shadow are completely removed, with the floor extended seamlessly. Do not alter anything outside the edited area."
+      },
+      {
+        "userInput": "物体名称：电视墙",
+        "maskContext": "蒙版覆盖整面电视背景墙",
+        "refImageContext": "参考图为木饰面+岩板组合、带悬浮电视柜的电视墙实景",
+        "expanded_zh": "将蒙版区域的电视背景墙替换为第二张图所示设计：左右暖色木饰面竖向板、中段浅色岩板大板，下方悬浮式深色电视柜。按本场景的墙体尺寸与相机透视重新构建该设计，电视保持原位挂装，收边与天花地面交接干净利落。材质高光按房间现有光照响应，悬浮柜下带柔和阴影。蒙版外不做任何改动。",
+        "expanded_en": "Replace the TV feature wall in the masked area with the design shown in the second image: vertical warm wood veneer panels on both sides, a light large-format sintered stone slab in the center, and a floating dark media cabinet below. Rebuild this design to fit the scene's own wall dimensions and camera perspective, keeping the TV mounted in its original position, with clean junctions at the ceiling and floor. Material highlights respond to the room's existing lighting, and a soft shadow falls beneath the floating cabinet. Do not alter anything outside the edited area."
+      }
+    ]
+  }
+}

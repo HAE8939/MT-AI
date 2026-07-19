@@ -1,0 +1,194 @@
+{
+  "meta": {
+    "id": "white-model-render",
+    "version": "1.1",
+    "name": "白膜出图",
+    "description": "用户上传 SU/3D 软件导出的白膜图（无材质白模型），再上传一张风格参考图，可补充指令（如：深色木地板，不要出现XXX）。LLM 提炼参考图的风格与材质体系，扩写为英文提示词，驱动模型将白膜渲染为写实效果图：严格保持白膜的空间结构、家具形体与相机角度。",
+    "taskType": "full-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "白膜的价值在于几何权威：形体和布局是设计师定好的，AI 只负责『穿衣服』——赋材质、打光、加细节，绝不改几何",
+      "用户补充指令中的排除项（不要出现XXX）转写为正向声明，gpt-image-1 不支持 negative prompt"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "none",
+    "refImages": 1,
+    "userText": "optional",
+    "extraFields": []
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "渲染声明 + 几何锁定 + 风格与材质分配(参考图) + 逐表面赋材质 + 光照方案 + 软装细节补充 + 写实相机声明",
+      "layers": [
+        {
+          "layer": "renderIntent",
+          "zh": "渲染声明",
+          "note": "开头明确任务：Render this white 3D model into a photorealistic interior photograph"
+        },
+        {
+          "layer": "geometryLock",
+          "zh": "几何锁定",
+          "note": "必选且最高权重。空间结构、家具形体位置、门窗、相机角度与白膜完全一致"
+        },
+        {
+          "layer": "styleAssign",
+          "zh": "风格分配",
+          "note": "从参考图提炼风格身份与配色体系，作为全屋材质分配的依据"
+        },
+        {
+          "layer": "surfaceMaterials",
+          "zh": "逐表面赋材质",
+          "note": "核心步骤。识别白膜中的主要表面并逐一指定材质：地面/墙面/顶面/主要家具，用户指令优先（如'深色木地板'）"
+        },
+        {
+          "layer": "lighting",
+          "zh": "光照方案",
+          "note": "指定一套完整光照：主光（窗光时段）+补充（灯具），默认明亮通透白天光"
+        },
+        {
+          "layer": "softDetails",
+          "zh": "软装细节",
+          "note": "白膜通常缺软装，按风格适度补充：窗帘、地毯、抱枕、绿植、摆件，但不新增大件家具"
+        },
+        {
+          "layer": "camera",
+          "zh": "写实相机",
+          "note": "必选。professional interior photography, realistic materials and depth"
+        }
+      ]
+    },
+    "referenceProtocol": {
+      "imageOrder": "第一张图=白膜图（几何权威），第二张图=风格参考图（材质与氛围来源）。",
+      "extraction": [
+        "从参考图提取：风格类型、配色、材质体系、软装语言、光照氛围",
+        "不从参考图提取：空间布局、家具位置形体（这些以白膜为准）",
+        "用户指令优先级最高：指定材质按用户的来，排除项转写为正向替代（'不要地毯'→'the floor stays bare'）"
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Render this white 3D model into ... 开头，几何锁定紧随其后",
+      "length": "80-140 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "任何改变几何/布局/视角的表述",
+        "negative prompt 语法，排除项一律转写为正向声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层（几何权威）",
+        "items": [
+          "空间结构与墙体门窗",
+          "全部家具的形体/位置/朝向",
+          "相机角度与构图",
+          "各物体的比例关系"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "全屋材质",
+          "完整光照方案",
+          "软装细节与织物",
+          "真实的色彩体系"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "材质分配成体系不混搭",
+          "光照统一且阴影自洽",
+          "材质纹理尺度符合透视",
+          "软装补充不喧宾夺主",
+          "整体像实拍照片而非渲染图"
+        ]
+      }
+    },
+    "failureModes": [
+      {
+        "mode": "几何漂移",
+        "zh": "渲染时家具变形/挪位/增删",
+        "preventionPhrase": "Follow the white model's geometry exactly: every wall, window, and piece of furniture keeps its precise shape, position and proportions."
+      },
+      {
+        "mode": "视角漂移",
+        "zh": "相机角度变化",
+        "preventionPhrase": "Keep the exact camera angle, framing and perspective of the model view."
+      },
+      {
+        "mode": "材质分配含糊",
+        "zh": "只写风格名，材质全靠模型猜",
+        "preventionPhrase": "逐表面点名材质：floor / walls / ceiling / sofa / cabinetry 至少各给一项明确材质"
+      },
+      {
+        "mode": "渲染感",
+        "zh": "出图像CG渲染不像照片",
+        "preventionPhrase": "The result should look like a professional interior photograph, not a CG rendering — natural light falloff, subtle imperfections, realistic material response."
+      },
+      {
+        "mode": "过度加戏",
+        "zh": "自行新增大件家具或改动布局",
+        "preventionPhrase": "Add only small soft furnishings (curtains, rug, cushions, plants, decor); do not add or remove any furniture."
+      },
+      {
+        "mode": "光照缺失",
+        "zh": "没有指定光照，出图平淡发灰",
+        "preventionPhrase": "始终给出完整光照方案：主光方向+时段+室内灯具状态"
+      },
+      {
+        "mode": "排除项失效",
+        "zh": "用户说不要的东西还是出现",
+        "preventionPhrase": "排除项转写为正向状态描述，如 'no artwork' → 'the walls stay clean and bare'"
+      }
+    ],
+    "tips": [
+      "白膜线条越清晰、面块越分明，几何锁定越稳；引导用户导出时打开边线",
+      "用户指令里的材质词用『局部材质修改』的 materialLibrary 同款展开逻辑，翻译成 颜色+纹理+饰面",
+      "默认光照用明亮的白天漫射光最稳（阴影少、几何不容易被光影带偏）"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "补充指令：深色木地板",
+        "refImageContext": "参考图为奶油风客厅实景",
+        "expanded_zh": "将这张白膜渲染为写实室内摄影效果图，严格遵循白膜几何：墙体、门窗、每件家具的形体、位置与比例完全不变，相机角度与构图不变。整体采用奶油风：墙面暖白乳胶漆，按用户要求地面铺深色胡桃木宽板木地板（哑光直纹），沙发为米白羊羔绒面料，茶几奶油色圆角矮几，配米色垂感窗帘、浅色地毯与少量绿植摆件，不新增或删除任何家具。光照为明亮的白天漫射窗光，柔和阴影，材质高光自然。专业室内摄影质感，像实拍照片而非CG渲染。",
+        "expanded_en": "Render this white 3D model into a photorealistic interior photograph, following the model's geometry exactly: every wall, window and piece of furniture keeps its precise shape, position and proportions, with the exact same camera angle and framing. Apply a cream-style scheme: warm off-white matte walls, and per the request a dark walnut wide-plank wood floor with straight matte grain. The sofa becomes off-white boucle, the coffee table a cream rounded low table, complemented by draping beige curtains, a light-toned rug and a few plants and decor pieces — adding only soft furnishings, never adding or removing furniture. Light the scene with bright diffused daylight from the windows, soft shadows and natural material highlights. Professional interior photography look, not a CG rendering."
+      },
+      {
+        "userInput": "补充指令：不要挂画",
+        "refImageContext": "参考图为原木日式风格卧室",
+        "expanded_zh": "将这张白膜渲染为写实室内摄影效果图，严格遵循白膜几何与相机角度，家具形体位置不变。整体采用原木日式风：浅橡木地板与木饰面、亚麻织物床品、低矮家具形制、暖白墙面，按用户要求墙面保持干净留白不放挂画。窗边配亚麻窗帘，柔和的白天漫射光入室，阴影轻柔，氛围安静温润。只补充软装细节，不新增家具。专业室内摄影质感。",
+        "expanded_en": "Render this white 3D model into a photorealistic interior photograph, following the model's geometry and camera angle exactly, with every furniture piece keeping its shape and position. Apply a Japandi scheme: light oak flooring and wood paneling, linen bedding, low-profile furniture forms and warm off-white walls — and per the request the walls stay clean and bare with no artwork. Linen curtains frame the window, soft diffused daylight fills the room with gentle shadows and a calm, warm mood. Add only small soft furnishings, never new furniture. Professional interior photography look."
+      }
+    ]
+  }
+}

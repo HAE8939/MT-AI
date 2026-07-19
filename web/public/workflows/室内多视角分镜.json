@@ -1,0 +1,248 @@
+{
+  "meta": {
+    "id": "interior-multiview-grid",
+    "version": "1.1",
+    "name": "室内多视角分镜",
+    "description": "用户上传一张室内图，选择出图模式（2x2 或 3x3 网格）、画幅比例、分辨率（1k/2k/4k）。模型基于原图空间生成同一房间的多个不同机位视角，以分镜网格形式输出在一张图内：空间、风格、材质、光照在所有分镜间严格一致。",
+    "taskType": "multi-output",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "gpt-image-1 无法一次调用产出多张独立视角图，因此采用『单图网格分镜』方案：一张输出图内画出 2x2/3x3 宫格，每格一个机位。后端可选做切图后处理",
+      "一致性是本功能的生命线：所有格子必须读作同一个房间"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "none",
+    "refImages": 0,
+    "userText": "none",
+    "extraFields": [
+      {
+        "key": "gridMode",
+        "type": "select",
+        "label_zh": "模式选择",
+        "options": [
+          "2X2",
+          "3X3"
+        ],
+        "default": "2X2"
+      },
+      {
+        "key": "aspectRatio",
+        "type": "select",
+        "label_zh": "比例选择",
+        "options": [
+          "1:1",
+          "4:3",
+          "16:9"
+        ],
+        "default": "1:1"
+      },
+      {
+        "key": "resolution",
+        "type": "select",
+        "label_zh": "分辨率选择",
+        "options": [
+          "1k",
+          "2k",
+          "4k"
+        ],
+        "default": "1k"
+      }
+    ]
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1,
+    "postProcess": "可选：后端按网格切分为 4/9 张单图返回"
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "网格声明 + 空间一致性锁定 + 机位清单(按格数分配) + 每格构图差异化 + 统一光照与色调 + 图面整洁 + 写实声明",
+      "layers": [
+        {
+          "layer": "gridIntent",
+          "zh": "网格声明",
+          "note": "必选开头：a 2x2 (或3x3) grid of N views of the exact same room, separated by thin white gutters"
+        },
+        {
+          "layer": "consistency",
+          "zh": "一致性锁定",
+          "note": "必选最高权重。同一房间、同一装修、同一家具、同一光照时段在每一格中保持一致"
+        },
+        {
+          "layer": "cameraList",
+          "zh": "机位清单",
+          "note": "核心。按格数从 cameraAngles 分配机位，每格明确点名（wide view / sofa close-up / corner view…）"
+        },
+        {
+          "layer": "variation",
+          "zh": "构图差异化",
+          "note": "每格景别有明显区分：全景/中景/特写/细节，避免九宫格全是相似角度"
+        },
+        {
+          "layer": "unifiedLook",
+          "zh": "统一色调",
+          "note": "所有格子同一光照、白平衡、色调，像同一组实拍交付"
+        },
+        {
+          "layer": "cleanliness",
+          "zh": "图面整洁",
+          "note": "格子之间分隔线干净，无文字标注、无编号、无水印"
+        },
+        {
+          "layer": "realism",
+          "zh": "写实声明",
+          "note": "必选。professional interior photography in every panel"
+        }
+      ]
+    },
+    "cameraAngles": {
+      "note": "机位池。2x2 取前4个策略位，3x3 取全部9类；LLM 根据原图空间类型微调措辞",
+      "angles": [
+        {
+          "id": "wide-main",
+          "en": "a wide establishing view of the whole room from the main entrance corner"
+        },
+        {
+          "id": "opposite-wide",
+          "en": "a wide view from the opposite corner looking back"
+        },
+        {
+          "id": "sofa-medium",
+          "en": "a medium shot of the main furniture group (sofa / bed / dining set)"
+        },
+        {
+          "id": "feature-wall",
+          "en": "a straight-on view of the feature wall"
+        },
+        {
+          "id": "window-side",
+          "en": "a view toward the window side showing the daylight"
+        },
+        {
+          "id": "detail-material",
+          "en": "a close-up of a key material junction or furniture texture"
+        },
+        {
+          "id": "decor-vignette",
+          "en": "a styled vignette of decor objects (shelf, side table or artwork)"
+        },
+        {
+          "id": "ceiling-light",
+          "en": "an upward-tilted view showing the ceiling design and lighting"
+        },
+        {
+          "id": "corridor-depth",
+          "en": "a depth view along the room's main circulation axis"
+        }
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Create a 2x2/3x3 grid of ... views of the exact same room ... 开头",
+      "length": "80-140 英文单词",
+      "style": "指令句式，不用逗号短语堆砌；机位清单在句中用分号自然串联",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "格子内加文字/编号/标签的表述",
+        "negative prompt 语法，改用正向声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层（跨格一致）",
+        "items": [
+          "房间结构与布局",
+          "全部家具与装饰",
+          "材质与配色",
+          "光照时段与氛围",
+          "风格气质"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "多个互补机位",
+          "景别节奏（全景/中景/特写）",
+          "网格排版"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "每格空间关系可互相印证（沙发和窗的相对位置在各格自洽）",
+          "统一白平衡与曝光",
+          "格子间隔干净统一",
+          "各格透视均真实可信"
+        ]
+      }
+    },
+    "failureModes": [
+      {
+        "mode": "跨格不一致",
+        "zh": "各格家具/材质/布局对不上，像不同房间",
+        "preventionPhrase": "Every panel shows the exact same room with identical furniture, materials, colors and lighting, spatially consistent with each other."
+      },
+      {
+        "mode": "机位雷同",
+        "zh": "格子全是差不多的角度",
+        "preventionPhrase": "Each panel uses a clearly different camera position and shot scale, from wide views to close-up details."
+      },
+      {
+        "mode": "网格数错误",
+        "zh": "要求9格出了6格",
+        "preventionPhrase": "Exactly four panels in a 2x2 grid / exactly nine panels in a 3x3 grid."
+      },
+      {
+        "mode": "文字乱入",
+        "zh": "格子里出现编号水印文字",
+        "preventionPhrase": "Clean panels with no text, numbers, labels or watermarks."
+      },
+      {
+        "mode": "空间逻辑穿帮",
+        "zh": "反打视角里家具位置矛盾",
+        "preventionPhrase": "The room's spatial layout stays logically consistent across all viewpoints."
+      },
+      {
+        "mode": "风格漂移",
+        "zh": "某格突然换了色调或装修",
+        "preventionPhrase": "One unified color grade, time of day and design scheme across all panels."
+      }
+    ],
+    "tips": [
+      "2x2 建议机位：全景+反打全景+主家具中景+材质特写；3x3 用满机位池",
+      "原图信息越全（拍到多面墙），跨格一致性越好",
+      "如需真正的独立多张图，用同一提示词换机位描述分次调用，成本更高但单格分辨率更高"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "模式：2X2；比例：1:1；分辨率：2k",
+        "expanded_zh": "基于原图这间客厅，生成一张 2x2 分镜网格图，四个格子、细白色分隔线，每格是同一房间的不同机位：左上为从入口角落看全屋的广角全景；右上为对角反打广角；左下为沙发组中景；右下为电视墙材质与家具质感特写。每一格中房间结构、家具、材质、配色与光照时段完全一致，空间关系互相自洽，统一白平衡与色调，像同一组实拍交付照。格内无任何文字、编号或水印。每格均为专业室内摄影质感。",
+        "expanded_en": "Create a 2x2 grid of four views of the exact same living room from the original image, separated by thin white gutters. Top-left: a wide establishing view of the whole room from the entrance corner; top-right: a wide view from the opposite corner looking back; bottom-left: a medium shot of the sofa group; bottom-right: a close-up of the feature wall material and furniture texture. Every panel shows identical furniture, materials, colors and the same time of day, spatially consistent with each other, with one unified white balance and color grade like a single professional photo set. Clean panels with no text, numbers or watermarks. Professional interior photography in every panel."
+      }
+    ]
+  }
+}

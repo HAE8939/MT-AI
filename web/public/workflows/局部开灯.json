@@ -1,0 +1,232 @@
+{
+  "meta": {
+    "id": "local-light-on",
+    "version": "1.1",
+    "name": "局部开灯",
+    "description": "用户上传原图并涂抹蒙版指定开灯范围（灯具本体+期望被照亮的范围），无需输入文字。LLM 识别蒙版内的灯具类型，扩写为英文编辑提示词，驱动 gpt-image-1 将灯具点亮并在蒙版范围内呈现真实的光晕、照亮与衰减。",
+    "taskType": "masked-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "关键认知：蒙版编辑只重绘蒙版内像素，灯光的光晕和照亮效果无法越出蒙版。因此 UI 引导用户『涂抹开灯范围』而非只涂灯具本体——蒙版应覆盖灯具+光晕半径"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "required",
+    "refImages": 0,
+    "userText": "optional",
+    "extraFields": []
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "灯具识别 + 点亮状态 + 光色温 + 光晕与衰减 + 被照亮表面 + 与环境光的关系 + 锁定声明",
+      "layers": [
+        {
+          "layer": "fixture",
+          "zh": "灯具识别",
+          "note": "先判断蒙版内是什么灯：吊灯/筒灯/灯带/台灯/落地灯/壁灯/床头灯，多个灯具则逐一点名"
+        },
+        {
+          "layer": "onState",
+          "zh": "点亮状态",
+          "note": "灯具发光体变亮：now turned on and glowing warmly"
+        },
+        {
+          "layer": "colorTemp",
+          "zh": "光色温",
+          "note": "默认暖光 warm 2700-3000K 类描述（用 warm cozy glow 表述，不写开尔文数值）；用户指定冷光/中性光时切换"
+        },
+        {
+          "layer": "falloff",
+          "zh": "光晕与衰减",
+          "note": "必选。光从灯具向外柔和衰减：soft gradual falloff，避免一刀切亮斑"
+        },
+        {
+          "layer": "litSurfaces",
+          "zh": "被照亮表面",
+          "note": "点名蒙版范围内被照亮的表面（墙面洗光、台面亮起、天花反光），照亮强度随距离减弱"
+        },
+        {
+          "layer": "ambientRelation",
+          "zh": "环境关系",
+          "note": "环境整体曝光不变，新光只作为局部补充光源叠加"
+        },
+        {
+          "layer": "lock",
+          "zh": "锁定声明",
+          "note": "必选。灯具造型不变，蒙版外一切不变"
+        }
+      ]
+    },
+    "maskProtocol": {
+      "principle": "蒙版=开灯影响范围。灯具本体+期望光晕都必须在蒙版内，光效不会越出蒙版。",
+      "rules": [
+        "识别蒙版内所有灯具并逐一点亮；蒙版内没有灯具时，视为在该区域合理位置点亮隐藏光源（如灯带）",
+        "光晕必须在蒙版边界内自然衰减到与原图亮度一致，绝不在边界留下明暗断层：the added light fades smoothly to the original exposure well before the edge of the edited area",
+        "灯具的造型、位置、数量不变，只改变发光状态",
+        "提示词结尾必须包含 'Do not alter anything outside the edited area.'"
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Turn on the ... in the masked area 开头，Match / Preserve 收尾",
+      "length": "50-100 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "开尔文色温数值、流明数值，用 warm / neutral / cool glow 表述",
+        "negative prompt 语法，改用正向锁定声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层",
+        "items": [
+          "灯具造型与位置",
+          "蒙版外全部内容与整体曝光",
+          "原图色调与白平衡基调",
+          "相机角度与透视"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "灯具发光体点亮",
+          "光晕",
+          "被照亮表面的提亮"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "光随距离柔和衰减",
+          "光色温与场景基调协调",
+          "被照表面材质正确响应（哑光墙洗光、亮面台反光）",
+          "蒙版边界处亮度平滑过渡到原图",
+          "发光体亮而不曝"
+        ]
+      }
+    },
+    "templates": [
+      {
+        "id": "pendant-light",
+        "scene": "吊灯点亮",
+        "tags": [
+          "吊灯",
+          "餐厅",
+          "客厅"
+        ],
+        "en": "Turn on the pendant light in the masked area: its shade now glows with a warm cozy light, bright at the source but never blown out. A soft pool of warm light falls onto the surface below, brightest directly underneath and fading gradually with distance, with a gentle glow on the nearby ceiling. The added light fades smoothly back to the original exposure well before the edge of the edited area. Keep the fixture's design, position and everything outside the mask unchanged. Do not alter anything outside the edited area.",
+        "zh": "点亮蒙版区域内的吊灯：灯罩发出温暖舒适的光，光源明亮但不过曝。一团柔和暖光落在下方台面上，正下方最亮并随距离渐弱，附近天花有轻微光晕。新增光在蒙版边界前平滑过渡回原图曝光。灯具造型与位置不变，蒙版外一切不变。"
+      },
+      {
+        "id": "cove-strip",
+        "scene": "灯带点亮",
+        "tags": [
+          "灯带",
+          "吊顶",
+          "背景墙"
+        ],
+        "en": "Turn on the concealed LED cove strip in the masked area: a continuous band of warm indirect light now washes evenly along the surface, soft and diffuse with no visible hotspots, gently grading from brighter near the cove to the original exposure further away. The light stays even along the strip's full length within the mask. Keep the ceiling and wall geometry, and everything outside the mask, exactly unchanged. Do not alter anything outside the edited area.",
+        "zh": "点亮蒙版区域内的隐藏灯带：一条连续的暖色间接光均匀洗亮表面，柔和漫射、无可见亮斑，从灯槽附近较亮平滑过渡到远处的原图曝光。灯带全长光照均匀。天花与墙体几何以及蒙版外一切保持不变。蒙版外不做任何改动。"
+      },
+      {
+        "id": "table-floor-lamp",
+        "scene": "台灯/落地灯点亮",
+        "tags": [
+          "台灯",
+          "落地灯",
+          "卧室",
+          "客厅"
+        ],
+        "en": "Turn on the lamp in the masked area: its shade glows warmly from within, casting a soft warm sphere of light around it that brightens the nearby tabletop and wall, fading gently with distance. The lampshade transmits light naturally, brighter at the center, and the added light blends smoothly into the original exposure before the mask boundary. Keep the lamp's design and position, and everything outside the mask, unchanged. Do not alter anything outside the edited area.",
+        "zh": "点亮蒙版区域内的台灯/落地灯：灯罩由内而外透出暖光，在周围形成柔和光球，提亮附近桌面与墙面并随距离渐弱。灯罩透光自然、中心较亮，新增光在蒙版边界前平滑融入原图曝光。灯具造型与位置不变，蒙版外一切不变。"
+      },
+      {
+        "id": "generic-fallback",
+        "scene": "通用兜底",
+        "tags": [
+          "通用"
+        ],
+        "en": "Turn on the light fixtures in the masked area: each fixture now glows with a warm cozy light, bright at the source without overexposure, casting soft realistic illumination onto the nearby surfaces with gradual distance falloff. The added light fades smoothly back to the original exposure well before the edge of the edited area, and the overall scene exposure and color mood stay unchanged. Keep every fixture's design and position identical. Do not alter anything outside the edited area.",
+        "zh": "点亮蒙版区域内的灯具：每个灯具发出温暖舒适的光，光源明亮不过曝，向附近表面投射柔和真实的照明并随距离衰减。新增光在蒙版边界前平滑过渡回原图曝光，画面整体曝光与色调不变。灯具造型与位置完全不变。蒙版外不做任何改动。"
+      }
+    ],
+    "failureModes": [
+      {
+        "mode": "边界断层",
+        "zh": "蒙版边缘出现明暗一刀切",
+        "preventionPhrase": "The added light fades smoothly back to the original exposure well before the edge of the edited area."
+      },
+      {
+        "mode": "光源过曝",
+        "zh": "发光体变成死白亮斑",
+        "preventionPhrase": "Bright at the source but never blown out, with visible shade material and detail."
+      },
+      {
+        "mode": "无衰减",
+        "zh": "整个蒙版区域均匀提亮像加了滤镜",
+        "preventionPhrase": "Illumination is strongest at the fixture and falls off gradually with distance."
+      },
+      {
+        "mode": "色温突兀",
+        "zh": "冷光硬闯暖调场景",
+        "preventionPhrase": "The light's warmth harmonizes with the scene's existing color mood."
+      },
+      {
+        "mode": "灯具被改型",
+        "zh": "点亮时顺带换了灯具造型",
+        "preventionPhrase": "Keep every fixture's design, position and count exactly unchanged; only its lit state changes."
+      },
+      {
+        "mode": "整体曝光漂移",
+        "zh": "开个灯把全图提亮了",
+        "preventionPhrase": "The overall scene exposure outside the lit region stays unchanged."
+      },
+      {
+        "mode": "材质响应错误",
+        "zh": "亮面材质没有反射高光、哑光面出现镜面反射",
+        "preventionPhrase": "Lit surfaces respond according to their material: matte surfaces show soft wash, glossy surfaces show gentle specular highlights."
+      }
+    ],
+    "tips": [
+      "前端引导：蒙版要把灯具和想被照亮的范围一起涂进去，只涂灯头会出现『灯亮了但屋里没变化』",
+      "夜景/黄昏原图开灯效果最好；白天大太阳原图里开灯视觉变化很小，可提示用户先用『光影重塑』转阴天",
+      "多个灯具建议一次全涂，一起点亮，光色统一"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "（无文字输入）",
+        "maskContext": "蒙版覆盖餐厅三头吊灯及下方餐桌区域",
+        "expanded_zh": "点亮蒙版区域内的三头餐吊灯：三个灯罩发出一致的暖光，光源明亮不过曝，柔和的暖光池落在下方餐桌上，正下方最亮并向四周渐弱，附近天花带轻微光晕。新增光在蒙版边界前平滑过渡回原图曝光，画面整体色调不变。灯具造型与位置不变。蒙版外不做任何改动。",
+        "expanded_en": "Turn on the three-head pendant lamp in the masked area: all three shades glow with a matching warm light, bright at the source but never blown out. A soft pool of warm light falls onto the dining table below, brightest directly underneath and fading outward, with a gentle glow on the nearby ceiling. The added light fades smoothly back to the original exposure well before the mask boundary, and the scene's overall color mood stays unchanged. Keep the fixture's design and position identical. Do not alter anything outside the edited area."
+      }
+    ]
+  }
+}

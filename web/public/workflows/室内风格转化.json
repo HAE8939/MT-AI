@@ -1,0 +1,239 @@
+{
+  "meta": {
+    "id": "interior-style-transfer",
+    "version": "1.1",
+    "name": "室内风格转化",
+    "description": "用户上传原图和一张风格参考图，可补充需求，选择分辨率（2k/3k）。LLM 提炼参考图的设计风格（配色、材质体系、家具形制、软装语言），迁移到原图空间：保留房间结构与布局逻辑，软硬装整体换风格。",
+    "taskType": "full-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "与『室内氛围转换』的区别：氛围只换光和色调；风格转化会换家具样式、材质与软装，是更大幅度的编辑",
+      "风格提炼沿用 localbanana.io 7要素：Style + Color + Medium 从参考图提取，Environment（房间结构）从原图锁定"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "none",
+    "refImages": 1,
+    "userText": "optional",
+    "extraFields": [
+      {
+        "key": "resolution",
+        "type": "select",
+        "label_zh": "分辨率",
+        "options": [
+          "2k",
+          "3k"
+        ],
+        "default": "2k"
+      }
+    ]
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "风格身份(参考图提炼) + 配色体系 + 材质体系 + 家具形制转换 + 软装语言 + 结构与布局锁定 + 光照适配 + 写实声明",
+      "layers": [
+        {
+          "layer": "styleIdentity",
+          "zh": "风格身份",
+          "note": "核心步骤。给参考图风格命名并展开：奶油风/侘寂/现代简约/法式/中古/轻奢等，附2-3个决定性特征"
+        },
+        {
+          "layer": "colorSystem",
+          "zh": "配色体系",
+          "note": "参考图的主色/辅色/点缀色及比例感受"
+        },
+        {
+          "layer": "materialSystem",
+          "zh": "材质体系",
+          "note": "参考图的标志性材质组合（微水泥+原木 / 石材+黄铜 / 布艺+藤编）"
+        },
+        {
+          "layer": "furnitureTranslation",
+          "zh": "家具形制转换",
+          "note": "原图每件家具在新风格下换成对应形制：sofa becomes a low rounded boucle sofa。数量与位置不变，样式变"
+        },
+        {
+          "layer": "softDecor",
+          "zh": "软装语言",
+          "note": "窗帘、地毯、灯具、挂画、绿植按新风格重新演绎"
+        },
+        {
+          "layer": "structureLock",
+          "zh": "结构布局锁定",
+          "note": "必选。墙体门窗位置、房间尺度、家具布局位置、相机角度不变"
+        },
+        {
+          "layer": "lightingAdapt",
+          "zh": "光照适配",
+          "note": "保持原图光源方向与时段，新材质在原光照下正确响应"
+        },
+        {
+          "layer": "realism",
+          "zh": "写实声明",
+          "note": "必选。photorealistic interior design photograph"
+        }
+      ]
+    },
+    "referenceProtocol": {
+      "imageOrder": "第一张图=待转换原图，第二张图=风格参考图。",
+      "extraction": [
+        "提取参考图的：风格类型、配色体系、材质组合、家具造型语言、软装元素、整体气质",
+        "不提取参考图的：房间户型、家具摆放位置、相机角度、窗外景色",
+        "用户补充需求优先级最高（如'保留我的窗帘'则窗帘锁定）"
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Redesign the interior in ... style 开头，Keep / Preserve 收尾",
+      "length": "70-130 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "更改房间结构的表述（拆墙、开窗）",
+        "negative prompt 语法，改用正向锁定声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层",
+        "items": [
+          "墙体/门窗位置与房间结构",
+          "家具的布局位置与朝向",
+          "相机角度与构图",
+          "原图光源方向与时段",
+          "窗外景色"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "新风格的配色体系",
+          "新材质体系（墙面/地面/家具面料）",
+          "新家具形制",
+          "新软装（窗帘/地毯/灯具/挂画/饰品）"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "新材质在原光照下正确响应",
+          "家具比例与房间尺度可信",
+          "风格元素之间成体系不混搭",
+          "全屋色彩比例平衡（主色60/辅色30/点缀10的感受）",
+          "细节密度符合该风格（侘寂做减法、法式做线条）"
+        ]
+      }
+    },
+    "styleLibrary": [
+      {
+        "zh": "奶油风",
+        "en": "cream style — warm off-white and beige palette, rounded plump furniture, boucle and soft fabrics, light wood, cozy and gentle"
+      },
+      {
+        "zh": "侘寂风",
+        "en": "wabi-sabi — muted earthy neutrals, microcement and raw wood textures, low minimal furniture, negative space, quiet imperfect beauty"
+      },
+      {
+        "zh": "现代简约",
+        "en": "modern minimalist — clean lines, neutral palette with black accents, flat-front cabinetry, uncluttered surfaces"
+      },
+      {
+        "zh": "法式",
+        "en": "French style — wall moldings, herringbone parquet, curved elegant furniture, brass and marble accents, soft romantic palette"
+      },
+      {
+        "zh": "中古风",
+        "en": "mid-century modern — walnut wood, tapered legs, saturated accent colors, vintage lighting, geometric patterns"
+      },
+      {
+        "zh": "轻奢",
+        "en": "modern luxury — marble surfaces, brass details, velvet upholstery, layered lighting, refined contrast palette"
+      },
+      {
+        "zh": "原木日式",
+        "en": "Japandi — light oak wood, low-profile furniture, linen fabrics, soft diffused light, warm minimal calm"
+      },
+      {
+        "zh": "新中式",
+        "en": "new Chinese style — dark wood framing, symmetry, ink-tone artwork, warm neutral base with subtle red or jade accents"
+      }
+    ],
+    "failureModes": [
+      {
+        "mode": "结构被改",
+        "zh": "转风格顺带改了户型门窗",
+        "preventionPhrase": "Keep the room's architecture, wall positions, windows and doors exactly as they are."
+      },
+      {
+        "mode": "布局漂移",
+        "zh": "家具被挪位/增删",
+        "preventionPhrase": "Every piece of furniture stays in its original position and orientation; only its style, form and material change."
+      },
+      {
+        "mode": "风格混搭",
+        "zh": "新旧风格元素残留混杂",
+        "preventionPhrase": "Restyle every visible element consistently so the whole room reads as one coherent style."
+      },
+      {
+        "mode": "配色失衡",
+        "zh": "点缀色铺成主色",
+        "preventionPhrase": "Follow the style's palette hierarchy: dominant base tones, secondary tones, and small accents."
+      },
+      {
+        "mode": "光照断裂",
+        "zh": "新风格自带新光照，与原图时段冲突",
+        "preventionPhrase": "Keep the original light direction and time of day; new materials simply respond to the existing light."
+      },
+      {
+        "mode": "透视/相机漂移",
+        "zh": "视角变了",
+        "preventionPhrase": "Same camera angle, framing and perspective as the original photo."
+      },
+      {
+        "mode": "比例失真",
+        "zh": "新家具尺寸与房间不符",
+        "preventionPhrase": "All furniture stays proportionate to the room's real scale."
+      }
+    ],
+    "tips": [
+      "参考图选整屋实景效果最好；单件家具特写当风格参考容易提炼不出体系",
+      "styleLibrary 覆盖不了的风格，LLM 按同格式自行展开：风格名+配色+材质+家具形制+气质",
+      "用户'提需求'常见写法是保留项（保留地板/窗帘不动），扩写时逐条放进 Preserve 部分"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "提需求：地板保持不动",
+        "refImageContext": "参考图为奶油风客厅",
+        "expanded_zh": "将原图客厅整体转化为奶油风：暖白与米色为主的配色，家具换成圆润饱满的形制——沙发变为米白羊羔绒圆弧沙发、茶几变为奶油色圆角矮几，墙面改为暖白乳胶漆，窗帘换成米色垂感纱帘，搭配奶油色系地毯、球形暖光吊灯与浅色挂画。所有家具保持原位置与朝向，仅样式材质改变；房间结构、门窗、相机角度不变；按用户要求地板完全保留原样。保持原图光照方向与时段，新材质在原光下自然响应。写实室内设计摄影。",
+        "expanded_en": "Redesign the living room in cream style: a warm off-white and beige palette, with furniture translated into rounded plump forms — the sofa becomes a curved off-white boucle sofa, the coffee table a cream rounded low table. Walls become warm off-white matte paint, curtains change to draping beige sheers, complemented by a cream-toned rug, a globe pendant with warm light and light-toned artwork. Every furniture piece keeps its original position and orientation with only its style and material changed. Keep the room's architecture, windows, doors and camera angle unchanged, and per the request keep the existing floor exactly as it is. Preserve the original light direction and time of day, with the new materials responding naturally to it. Photorealistic interior design photograph."
+      }
+    ]
+  }
+}

@@ -1,0 +1,206 @@
+{
+  "meta": {
+    "id": "texture-enhance",
+    "version": "1.1",
+    "name": "质感增强",
+    "description": "用户上传图像（≤20MB），选择变化程度（低/中/高），无文字输入。将 AI 渲染图/发闷的照片增强为质感通透的写实照片：材质细节、织物纹理、光泽层次全面提升，内容与构图不变。定位为『洗图』第二步，后接『高清放大』。",
+    "taskType": "full-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "变化程度控制的是『重绘自由度』：低=只提质感、像素级贴近原图；高=允许材质细节明显重构（纹理重画、织物毛感重建），内容仍锁定",
+      "与『光影重塑』的分工：光影重塑管曝光与光；质感增强管材质表面的微观细节与真实感"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "none",
+    "refImages": 0,
+    "userText": "none",
+    "extraFields": [
+      {
+        "key": "intensity",
+        "type": "select",
+        "label_zh": "选择变化程度",
+        "options": [
+          "低",
+          "中",
+          "高"
+        ],
+        "default": "低"
+      }
+    ]
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "增强声明 + 强度档位 + 材质微观细节 + 织物与表面真实感 + 光泽层次 + 清晰度与噪点治理 + 内容锁定 + 写实声明",
+      "layers": [
+        {
+          "layer": "enhanceIntent",
+          "zh": "增强声明",
+          "note": "开头明确：Enhance this interior image into a crisp, richly detailed photorealistic photograph"
+        },
+        {
+          "layer": "intensity",
+          "zh": "强度档位",
+          "note": "低/中/高映射 intensityProfiles，控制重绘幅度的语言强度"
+        },
+        {
+          "layer": "microDetail",
+          "zh": "材质微观细节",
+          "note": "核心。木纹肌理、石材脉络、金属拉丝、皮革毛孔在近景处清晰可辨"
+        },
+        {
+          "layer": "fabricRealism",
+          "zh": "织物真实感",
+          "note": "布艺呈现真实织纹与绒毛感，地毯有毛绒纤维细节，窗帘垂坠有织物肌理"
+        },
+        {
+          "layer": "sheenLayers",
+          "zh": "光泽层次",
+          "note": "哑光/缎光/高光材质各归其位，反射符合物理"
+        },
+        {
+          "layer": "clarity",
+          "zh": "清晰度治理",
+          "note": "消除渲染的塑料感与涂抹感，边缘干净，噪点均匀细腻"
+        },
+        {
+          "layer": "lock",
+          "zh": "内容锁定",
+          "note": "必选。构图、布局、家具、颜色、光照方向全部不变"
+        },
+        {
+          "layer": "realism",
+          "zh": "写实声明",
+          "note": "必选。looks like a photograph shot on a full-frame camera"
+        }
+      ]
+    },
+    "intensityProfiles": {
+      "低": {
+        "en": "Refine subtly and stay extremely close to the original image: sharpen existing material details and textures gently, without changing any surface's appearance",
+        "zh": "轻微精修，像素级贴近原图：只轻柔强化已有材质细节，不改变任何表面的样貌"
+      },
+      "中": {
+        "en": "Enhance moderately: rebuild fine material textures where they look soft or artificial, keeping every surface's color and character identical",
+        "zh": "中度增强：对发糊或假的材质重建细腻纹理，每个表面的颜色与气质保持一致"
+      },
+      "高": {
+        "en": "Enhance strongly: re-render material surfaces with rich photorealistic micro-detail — wood grain, fabric weave, stone veining — while keeping the scene's content, layout, colors and lighting unchanged",
+        "zh": "强力增强：以丰富的写实微观细节重绘材质表面——木纹、织纹、石纹——但场景内容、布局、颜色与光照不变"
+      }
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Enhance this interior image ... 开头，Keep / Preserve 收尾",
+      "length": "50-100 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "改变颜色/光照/构图的表述",
+        "negative prompt 语法，改用正向锁定声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层",
+        "items": [
+          "构图与相机角度",
+          "布局与全部家具",
+          "材质固有色",
+          "光照方向与氛围",
+          "画面明暗关系"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "材质微观细节",
+          "织物纤维感",
+          "真实光泽层次",
+          "干净的边缘与噪点"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "增强程度全图一致",
+          "细节密度符合距离（近实远虚）",
+          "锐化不产生白边",
+          "质感提升不带来颜色漂移",
+          "保持自然景深"
+        ]
+      }
+    },
+    "failureModes": [
+      {
+        "mode": "内容漂移",
+        "zh": "高强度下家具/装饰被改动",
+        "preventionPhrase": "Keep the scene's content, layout, furniture, colors and lighting exactly unchanged."
+      },
+      {
+        "mode": "过度锐化",
+        "zh": "白边、脆边、油画感",
+        "preventionPhrase": "Details stay natural and photographic, with clean edges and no oversharpening halos."
+      },
+      {
+        "mode": "全图均匀实",
+        "zh": "远近同样锐利，景深消失",
+        "preventionPhrase": "Detail density follows the original depth of field: crisp in focus, naturally soft out of focus."
+      },
+      {
+        "mode": "颜色漂移",
+        "zh": "增强顺带改了色",
+        "preventionPhrase": "All colors and white balance remain identical to the original."
+      },
+      {
+        "mode": "塑料感未除",
+        "zh": "渲染的假滑感残留",
+        "preventionPhrase": "Replace any artificial CG smoothness with believable material micro-texture."
+      },
+      {
+        "mode": "噪点脏乱",
+        "zh": "增强引入杂色噪点",
+        "preventionPhrase": "Fine, even photographic grain only; no color noise or artifacts."
+      }
+    ],
+    "tips": [
+      "低档适合已经不错的图做临门一脚；渲染图普遍建议中档起步",
+      "该功能之后接『高清放大』，两步分别解决『真实感』与『分辨率』",
+      "20MB 上限由前端校验，超限先压缩再上传"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "变化程度：中",
+        "expanded_zh": "将这张室内图增强为质感通透的写实照片，中度增强：对发糊或显假的材质重建细腻纹理，每个表面的颜色与气质保持一致。木纹、石材脉络、金属拉丝在近景清晰可辨，布艺与地毯呈现真实织纹与绒毛感，哑光缎光高光各归其位、反射符合物理。消除CG塑料感，边缘干净无锐化白边，噪点细腻均匀，细节密度遵循原图景深。构图、布局、家具、颜色与光照方向完全不变。像全画幅相机实拍的照片。",
+        "expanded_en": "Enhance this interior image into a crisp, richly detailed photorealistic photograph. Enhance moderately: rebuild fine material textures where they look soft or artificial, keeping every surface's color and character identical. Wood grain, stone veining and brushed metal read clearly at close range, fabrics and rugs show true weave and pile, and matte, satin and glossy finishes each behave physically. Replace any CG smoothness with believable micro-texture, with clean edges, no sharpening halos, fine even grain, and detail density following the original depth of field. Keep the composition, layout, furniture, colors and lighting direction exactly unchanged. It should look like a photograph shot on a full-frame camera."
+      }
+    ]
+  }
+}

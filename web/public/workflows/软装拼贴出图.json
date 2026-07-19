@@ -1,0 +1,185 @@
+{
+  "meta": {
+    "id": "moodboard-to-render",
+    "version": "1.1",
+    "name": "软装拼贴出图",
+    "description": "用户上传一张软装拼贴图（moodboard：家具/灯具/地毯/饰品的产品图拼在一起），可输入提示词（如：XXX地面、XXXX风格）。LLM 识别拼贴中的每件单品，扩写为英文提示词，驱动模型把这些单品组合成一张完整的写实室内实景图。",
+    "taskType": "full-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "软装设计师核心工作流：拼贴方案→客户看不懂→生成实景让客户秒懂。单品保真是第一优先级，空间是为单品服务的舞台",
+      "拼贴图内单品互相无透视关系，模型必须为每件单品重建统一透视与光照"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "none",
+    "refImages": 0,
+    "userText": "optional",
+    "extraFields": []
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "组合声明 + 单品清单忠实 + 空间构建(类型/地墙顶) + 合理布局 + 统一透视 + 统一光照 + 风格协调 + 写实声明",
+      "layers": [
+        {
+          "layer": "composeIntent",
+          "zh": "组合声明",
+          "note": "开头明确：Create a photorealistic interior photograph furnished with the exact items shown in this moodboard"
+        },
+        {
+          "layer": "itemFidelity",
+          "zh": "单品忠实",
+          "note": "第一优先级。每件单品的造型、颜色、材质忠实拼贴图：each item keeps its exact design, color and material"
+        },
+        {
+          "layer": "spaceBuild",
+          "zh": "空间构建",
+          "note": "为单品搭舞台：空间类型从单品组合推断（沙发茶几→客厅），地墙顶材质按用户提示词或与单品风格协调的默认值"
+        },
+        {
+          "layer": "layout",
+          "zh": "合理布局",
+          "note": "单品按居住常识布置：地毯在沙发组下、吊灯在中心上方、挂画在主墙"
+        },
+        {
+          "layer": "perspective",
+          "zh": "统一透视",
+          "note": "必选。所有单品重建到同一相机视角下，符合空间透视"
+        },
+        {
+          "layer": "lighting",
+          "zh": "统一光照",
+          "note": "必选。一套光照统罩全场：默认明亮白天窗光，所有单品同向受光、影子一致"
+        },
+        {
+          "layer": "styleGlue",
+          "zh": "风格协调",
+          "note": "背景空间的色调从单品中取色，让单品看起来彼此属于同一方案"
+        },
+        {
+          "layer": "realism",
+          "zh": "写实声明",
+          "note": "必选。professional interior photography"
+        }
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Create a photorealistic interior ... furnished with the exact items ... 开头",
+      "length": "80-140 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "遗漏拼贴中的单品或新增大件家具",
+        "negative prompt 语法，排除项转写为正向声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层（单品权威）",
+        "items": [
+          "每件单品的造型设计",
+          "每件单品的颜色",
+          "每件单品的材质质感",
+          "单品之间的风格关系"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "完整空间（地墙顶门窗）",
+          "统一透视视角",
+          "统一光照系统",
+          "空间尺度与布局"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "所有单品同一光照方向与色温",
+          "单品比例互相可信",
+          "背景配色从单品取色",
+          "接触阴影让单品落地",
+          "整体像一次实拍"
+        ]
+      }
+    },
+    "failureModes": [
+      {
+        "mode": "单品失真",
+        "zh": "生成的家具和拼贴款式不像",
+        "preventionPhrase": "Each item keeps its exact design, silhouette, color and material as shown in the moodboard."
+      },
+      {
+        "mode": "单品遗漏",
+        "zh": "拼贴里的东西没出现在实景",
+        "preventionPhrase": "Include every item from the moodboard in the scene.（扩写时逐件点名）"
+      },
+      {
+        "mode": "拼贴感残留",
+        "zh": "输出还是拼贴排版不是实景",
+        "preventionPhrase": "A single coherent interior photograph of one real room, not a collage layout."
+      },
+      {
+        "mode": "透视割裂",
+        "zh": "各单品各自的产品图角度硬拼",
+        "preventionPhrase": "Re-render every item from one consistent camera angle within the room's perspective."
+      },
+      {
+        "mode": "光照割裂",
+        "zh": "各单品保留产品图各自的光",
+        "preventionPhrase": "Light all items with one unified daylight scheme, same direction, color temperature and shadow softness."
+      },
+      {
+        "mode": "比例失调",
+        "zh": "灯比沙发大、地毯比床小",
+        "preventionPhrase": "All items are scaled to realistic real-world proportions relative to each other."
+      },
+      {
+        "mode": "自行加戏",
+        "zh": "新增拼贴外的大件家具",
+        "preventionPhrase": "Add only the architectural shell and minor styling; no additional furniture beyond the moodboard items."
+      }
+    ],
+    "tips": [
+      "扩写时先由 LLM 列出拼贴单品清单（沙发/单椅/吊灯/地毯/挂画/边几…），再逐件写进提示词，这是防遗漏的关键动作",
+      "用户提示词优先：'灰色木地板'则地面按用户来；未指定的背景要素从单品色系推导",
+      "拼贴图上如有文字标注（品名/尺寸），LLM 一并读取并利用"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "奶油风，浅色木地板",
+        "moodboardContext": "拼贴含：米白羊羔绒圆弧沙发、胡桃木边几、奶油色球形吊灯、米色短绒地毯、大幅抽象挂画、陶罐摆件",
+        "expanded_zh": "用这张拼贴中的单品组合出一张完整的写实客厅实景照片，逐件保真：米白羊羔绒圆弧沙发、胡桃木边几、奶油色球形吊灯、米色短绒地毯、大幅抽象挂画与陶罐摆件——每件单品的造型、颜色与材质与拼贴完全一致，全部出现且不新增其他大件家具。空间为奶油风客厅：暖白乳胶漆墙面，按用户要求铺浅色木地板。布局合理：地毯在沙发组下方，吊灯居中上方，挂画挂于沙发后主墙，边几与陶罐点缀其间。所有单品统一在明亮的白天窗光下，同向受光、接触阴影一致，比例互相真实可信。专业室内摄影，一张真实房间的照片而非拼贴排版。",
+        "expanded_en": "Create a photorealistic living-room photograph furnished with the exact items shown in this moodboard: the curved off-white boucle sofa, the walnut side table, the cream globe pendant, the beige short-pile rug, the large abstract artwork and the ceramic vase — each keeping its exact design, silhouette, color and material, all present with no additional furniture. Build a cream-style room around them: warm off-white painted walls and, per the request, light wood flooring. Arrange them naturally: the rug under the sofa group, the pendant centered above, the artwork on the main wall behind the sofa, the side table and vase styled nearby. Light everything with one unified bright daylight scheme from the windows, consistent shadow direction and grounded contact shadows, all items in realistic proportion to each other. Professional interior photography — a single coherent photo of one real room, not a collage."
+      }
+    ]
+  }
+}

@@ -1,0 +1,190 @@
+{
+  "meta": {
+    "id": "bare-shell-render",
+    "version": "1.1",
+    "name": "毛坯房出图",
+    "description": "用户上传清水毛坯房照片，输入空间描述（空间+风格+详细描述）。LLM 解析毛坯房的空间结构，结合用户描述扩写为英文提示词，驱动模型输出装修完成后的写实效果图：严格保持毛坯房的户型结构与拍摄视角。",
+    "taskType": "full-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "与『白膜出图』同族：毛坯照片就是几何权威，AI 负责硬装+软装全套；区别是毛坯是实拍照片，透视和光照已真实存在，装修后光照应延续原图窗光逻辑",
+      "用户描述格式引导为：空间类型+风格+细节要求，缺项由 LLM 按默认补全"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "none",
+    "refImages": 0,
+    "userText": "required",
+    "extraFields": []
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "装修声明 + 结构锁定(户型/门窗/视角) + 空间定义(用户) + 风格身份 + 硬装方案(地墙顶) + 家具布置 + 软装细节 + 光照延续 + 写实声明",
+      "layers": [
+        {
+          "layer": "renovateIntent",
+          "zh": "装修声明",
+          "note": "开头明确：Transform this bare concrete shell into a fully renovated ..."
+        },
+        {
+          "layer": "structureLock",
+          "zh": "结构锁定",
+          "note": "必选最高权重。墙体、门窗洞口位置、层高、管井、相机角度与毛坯照片完全一致"
+        },
+        {
+          "layer": "spaceDefine",
+          "zh": "空间定义",
+          "note": "用户指定该空间用途（客厅/卧室/餐厨）；未指定时从毛坯特征推断（有飘窗→卧室，有烟道→厨房）"
+        },
+        {
+          "layer": "styleIdentity",
+          "zh": "风格身份",
+          "note": "用户风格词从 styleLibrary 展开（复用室内风格转化的库）；未指定默认现代简约暖调"
+        },
+        {
+          "layer": "hardDecor",
+          "zh": "硬装方案",
+          "note": "核心步骤。地面/墙面/顶面逐一给材质做法，含踢脚、门套窗套的完成面"
+        },
+        {
+          "layer": "furniture",
+          "zh": "家具布置",
+          "note": "按空间类型给出合理家具组合与朝向（客厅：沙发面向电视墙；卧室：床头靠实墙）"
+        },
+        {
+          "layer": "softDecor",
+          "zh": "软装细节",
+          "note": "窗帘、地毯、灯具、绿植、摆件按风格补充"
+        },
+        {
+          "layer": "lighting",
+          "zh": "光照延续",
+          "note": "必选。沿用毛坯照片的窗光方向与时段，装修后材质在同一光照下呈现"
+        },
+        {
+          "layer": "realism",
+          "zh": "写实声明",
+          "note": "必选。professional interior photography"
+        }
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Transform this bare concrete shell into ... 开头",
+      "length": "80-140 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "改动结构的表述（拆墙、封窗、改门洞）",
+        "negative prompt 语法，排除项转写为正向声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层（毛坯权威）",
+        "items": [
+          "墙体与户型结构",
+          "门窗洞口位置与尺寸",
+          "层高与梁位",
+          "相机角度与构图",
+          "窗光方向与时段"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "全套硬装完成面",
+          "全套家具",
+          "软装与灯具",
+          "生活气息细节"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "家具尺度与户型真实比例可信",
+          "硬装收口完整（踢脚/门套/窗套）",
+          "材质在原窗光下正确响应",
+          "布置符合居住动线常识",
+          "整体像交付实拍而非渲染"
+        ]
+      }
+    },
+    "failureModes": [
+      {
+        "mode": "结构漂移",
+        "zh": "装修后户型/门窗位置变了",
+        "preventionPhrase": "Keep the shell's exact architecture: wall positions, window and door openings, ceiling height and the same camera angle."
+      },
+      {
+        "mode": "视角漂移",
+        "zh": "出图换了机位",
+        "preventionPhrase": "Photographed from the exact same viewpoint and framing as the original photo."
+      },
+      {
+        "mode": "毛坯痕迹残留",
+        "zh": "水泥面、线管、施工痕迹没除干净",
+        "preventionPhrase": "All raw concrete, exposed conduits and construction traces are fully finished over."
+      },
+      {
+        "mode": "家具比例失真",
+        "zh": "家具与房间尺度不符",
+        "preventionPhrase": "All furniture is proportionate to the room's real dimensions."
+      },
+      {
+        "mode": "布置违反常识",
+        "zh": "床头顶窗、沙发背门",
+        "preventionPhrase": "Furniture placement follows natural living logic for this room type."
+      },
+      {
+        "mode": "光照断裂",
+        "zh": "装修后光照与原图窗位时段矛盾",
+        "preventionPhrase": "Daylight continues to enter from the same windows at the same time of day as the original photo."
+      },
+      {
+        "mode": "渲染感",
+        "zh": "像CG不像实拍",
+        "preventionPhrase": "The result should look like a professional photograph of the finished apartment, not a CG rendering."
+      }
+    ],
+    "tips": [
+      "引导用户按『空间+风格+细节』填写：如'客厅，奶油风，深色木地板要有电视墙'",
+      "毛坯图尽量拍全空间主要墙面和窗，AI 对户型的理解才完整",
+      "用户没写空间类型时从毛坯特征推断并在返回中注明推断结果"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "客厅，奶油风，要有电视墙和吊顶灯带",
+        "expanded_zh": "将这张清水毛坯照片转换为装修完成的奶油风客厅实拍：墙体、门窗洞口、层高与相机视角和毛坯完全一致，所有水泥面与线管被完成面覆盖。硬装：暖白乳胶漆墙面、浅色木地板加同色踢脚、双眼皮吊顶带暖光灯带，主墙做暖白微水泥电视墙配悬浮电视柜。家具：米白羊羔绒圆弧沙发面向电视墙、奶油色圆角茶几、浅色地毯。软装：米色垂感窗帘、球形吊灯、少量绿植与摆件。日光延续原图窗位与时段入室，材质响应自然。专业室内交付实拍质感。",
+        "expanded_en": "Transform this bare concrete shell into a fully renovated cream-style living room, keeping the exact architecture — wall positions, window and door openings, ceiling height — and the same camera viewpoint, with all raw concrete and exposed conduits fully finished over. Hard finishes: warm off-white painted walls, light wood flooring with matching skirting, a stepped ceiling with a warm concealed light strip, and a warm off-white microcement TV feature wall with a floating media cabinet. Furnish with a curved off-white boucle sofa facing the TV wall, a cream rounded coffee table and a light-toned rug, plus draping beige curtains, a globe pendant and a few plants. Daylight continues to enter from the same windows at the same time of day as the original photo. Professional interior photography of the finished apartment, not a CG rendering."
+      }
+    ]
+  }
+}

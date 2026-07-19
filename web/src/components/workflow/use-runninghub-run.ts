@@ -15,6 +15,13 @@ import type { AgentTemplate, RunningHubSpec } from "@/types/workflow";
 // RunningHub 工作流运行共享逻辑：字段状态（含本地文件）→ 提交时解析上传 → 入队统一任务运行时 + 画布占位节点。
 // 运行弹窗（/workflows 页）与画布侧栏运行面板共同消费；同一下标的 values 与 localFiles 互斥。
 
+/** 图片大小上限 10MB：防止第三方 API 因图片过大处理失败 */
+const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
+
+function checkImageSize(blob: { size: number }, label: string) {
+    if (blob.size > MAX_IMAGE_BYTES) throw new Error(`${label}超过 10MB，请压缩后再提交`);
+}
+
 export type RunningHubLocalFile = { file: File; previewUrl: string };
 
 export function useRunningHubRun(template: AgentTemplate | null, options?: { defaultProjectId?: string }) {
@@ -94,6 +101,7 @@ export function useRunningHubRun(template: AgentTemplate | null, options?: { def
             blob = null;
         }
         if (!blob) throw new Error("读取画布图片失败，请重新选择图片");
+        checkImageSize(blob, "画布图片");
         const extension = (blob.type.split("/")[1] || "png").replace("+xml", "");
         return uploadRunningHubFile(uploadConfig(), blob, `canvas-input.${extension}`);
     };
@@ -114,7 +122,11 @@ export function useRunningHubRun(template: AgentTemplate | null, options?: { def
                     const local = field.kind === "image" ? localFiles[index] : undefined;
                     const raw = (values[`${index}`] ?? field.defaultValue ?? "").trim();
                     if (!local && !raw) return null;
-                    const fieldValue = field.kind === "image" ? (local ? await uploadRunningHubFile(uploadConfig(), local.file, local.file.name || "upload.png") : await resolveImageFieldValue(raw)) : raw;
+                    const fieldValue = field.kind === "image"
+                        ? (local
+                            ? (checkImageSize(local.file, `「${field.label}」`), await uploadRunningHubFile(uploadConfig(), local.file, local.file.name || "upload.png"))
+                            : await resolveImageFieldValue(raw))
+                        : raw;
                     return { field, raw: local ? local.file.name : raw, info: { nodeId: field.nodeId, fieldName: field.fieldName, fieldValue } };
                 }),
             );

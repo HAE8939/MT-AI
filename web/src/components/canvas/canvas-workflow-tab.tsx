@@ -1,7 +1,7 @@
 import { useMemo, useState } from "react";
 import { App, Button, Empty, Tag } from "antd";
 import { useNavigate } from "react-router-dom";
-import { Cloud, LayoutTemplate, Play, SlidersHorizontal } from "lucide-react";
+import { Cloud, LayoutTemplate, Play, SlidersHorizontal, Sparkles } from "lucide-react";
 import { nanoid } from "nanoid";
 
 import { canvasThemes } from "@/lib/canvas-theme";
@@ -10,6 +10,7 @@ import { useAgentStore } from "@/stores/use-agent-store";
 import { useCanvasStore } from "@/stores/canvas/use-canvas-store";
 import { CanvasWorkflowRunPanel } from "@/components/canvas/canvas-workflow-run-panel";
 import { LocalWorkflowRunPanel } from "@/components/workflow/local-workflow-run-panel";
+import { PromptEngineRunPanel } from "@/components/workflow/prompt-engine-run-panel";
 import { WorkflowTaskList } from "@/components/layout/workflow-task-drawer";
 import type { AgentTemplate } from "@/types/workflow";
 
@@ -49,7 +50,7 @@ export function CanvasWorkflowTab({ theme }: { theme: Theme }) {
     };
 
     const startRun = (template: AgentTemplate) => {
-        if (template.spec.kind === "runninghub" || template.spec.kind === "local-workflow") setRunTarget(template);
+        if (template.spec.kind === "runninghub" || template.spec.kind === "local-workflow" || template.spec.kind === "prompt-engine") setRunTarget(template);
         else insertCanvasTemplate(template);
     };
 
@@ -59,6 +60,8 @@ export function CanvasWorkflowTab({ theme }: { theme: Theme }) {
                 <CanvasWorkflowRunPanel template={activeTemplate} theme={theme} currentProjectId={currentProjectId || undefined} onBack={() => setRunTarget(null)} />
             ) : activeTemplate && activeTemplate.spec.kind === "local-workflow" ? (
                 <LocalWorkflowRunPanel template={activeTemplate} theme={theme} onBack={() => setRunTarget(null)} />
+            ) : activeTemplate && activeTemplate.spec.kind === "prompt-engine" ? (
+                <PromptEngineRunPanel template={activeTemplate} theme={theme} onBack={() => setRunTarget(null)} />
             ) : (
                 <div className="space-y-3">
                     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -76,7 +79,9 @@ export function CanvasWorkflowTab({ theme }: { theme: Theme }) {
                                     ? { icon: <Cloud className="mr-0.5 inline size-3" />, label: "云工作流" }
                                     : template.spec.kind === "local-workflow"
                                       ? { icon: <LayoutTemplate className="mr-0.5 inline size-3" />, label: "本地工作流" }
-                                      : { icon: <LayoutTemplate className="mr-0.5 inline size-3" />, label: "画布模板" };
+                                      : template.spec.kind === "prompt-engine"
+                                        ? { icon: <Sparkles className="mr-0.5 inline size-3" />, label: "提示词引擎" }
+                                        : { icon: <LayoutTemplate className="mr-0.5 inline size-3" />, label: "画布模板" };
                             return (
                                 <div key={template.id} className="rounded-lg border px-3 py-2" style={{ borderColor: theme.node.stroke, color: theme.node.text }}>
                                     <div className="flex items-center gap-2">

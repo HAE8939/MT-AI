@@ -1,0 +1,227 @@
+{
+  "meta": {
+    "id": "floorplan-layout-gen",
+    "version": "1.1",
+    "name": "家装平面方案生成",
+    "description": "用户上传原始结构图（户型图，图中可用文字标注各空间类型：入户门/客厅/主卧/主卫/书房等），可输入空间要求（如：餐厅餐椅采用六人位餐椅）。LLM 读取户型结构与标注，扩写为英文提示词，驱动模型输出带家具布置的彩色平面布置图：墙体结构严格不变，家具按空间功能合理布置。",
+    "taskType": "full-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "输出物是『平面布置图』——自上而下的二维图纸表达，不是透视效果图，输出契约必须锁死 top-down orthographic 视角",
+      "UI 提醒：想精准出各空间布置，需用户在原图上做文字标注。LLM 读取标注文字并逐空间落实"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "none",
+    "refImages": 0,
+    "userText": "optional",
+    "extraFields": []
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "图纸声明(俯视平面) + 结构锁定(墙体/门窗/尺度) + 空间标注读取 + 逐空间布置 + 用户要求落实 + 图面表达风格 + 常识校验",
+      "layers": [
+        {
+          "layer": "drawingIntent",
+          "zh": "图纸声明",
+          "note": "必选开头：Convert this structural floor plan into a furnished color floor plan, strictly top-down orthographic view"
+        },
+        {
+          "layer": "structureLock",
+          "zh": "结构锁定",
+          "note": "必选最高权重。墙体、门窗洞口、管井、尺寸比例与原图完全一致，不拆不改"
+        },
+        {
+          "layer": "labelReading",
+          "zh": "标注读取",
+          "note": "读取图中中文标注（入户门/客厅/主卧/主卫/书房），按标注分配空间功能；无标注的空间按位置与面积推断"
+        },
+        {
+          "layer": "roomFurnish",
+          "zh": "逐空间布置",
+          "note": "核心。每个空间按 roomPresets 布置家具，俯视图例表达"
+        },
+        {
+          "layer": "userRequire",
+          "zh": "用户要求",
+          "note": "用户指定项优先落实（六人位餐椅、书房要榻榻米）"
+        },
+        {
+          "layer": "graphicStyle",
+          "zh": "图面风格",
+          "note": "彩色平面图表达：浅色地材填充区分空间、家具带柔和投影、墙体深色实体，清晰专业"
+        },
+        {
+          "layer": "sanityCheck",
+          "zh": "常识校验",
+          "note": "动线通畅、门的开启扇不撞家具、床不顶窗、沙发面向电视"
+        }
+      ]
+    },
+    "roomPresets": {
+      "note": "各空间的默认家具组合（俯视表达），用户要求覆盖默认",
+      "presets": [
+        {
+          "room": "客厅",
+          "en": "living room — sofa group facing the TV wall, coffee table, rug, TV cabinet, side plants"
+        },
+        {
+          "room": "餐厅",
+          "en": "dining room — dining table with chairs (four-seat default), sideboard against the wall"
+        },
+        {
+          "room": "厨房",
+          "en": "kitchen — L-shaped or galley counter along the walls with sink and cooktop symbols"
+        },
+        {
+          "room": "主卧",
+          "en": "master bedroom — double bed with headboard against a solid wall, nightstands, wardrobe, rug"
+        },
+        {
+          "room": "次卧",
+          "en": "secondary bedroom — smaller double or single bed, nightstand, wardrobe"
+        },
+        {
+          "room": "儿童房",
+          "en": "kids room — single bed, desk, wardrobe"
+        },
+        {
+          "room": "书房",
+          "en": "study — desk facing or beside the window, office chair, bookshelf"
+        },
+        {
+          "room": "卫生间",
+          "en": "bathroom — toilet, vanity, shower area with glass partition symbols"
+        },
+        {
+          "room": "阳台",
+          "en": "balcony — washer position or leisure seating and plants"
+        },
+        {
+          "room": "入户/玄关",
+          "en": "entry — shoe cabinet along the wall beside the door"
+        }
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Convert this structural floor plan into ... 开头",
+      "length": "80-140 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "任何透视/3D视角表述（isometric、perspective），只允许 top-down orthographic",
+        "改动墙体门窗的表述",
+        "negative prompt 语法，改用正向锁定声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层（结构权威）",
+        "items": [
+          "全部墙体与户型轮廓",
+          "门窗洞口位置与宽度",
+          "空间尺寸比例",
+          "图纸方向",
+          "原图标注对应的空间划分"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "每个空间的家具布置",
+          "地材填充色区分空间",
+          "家具俯视图例",
+          "柔和的图面投影"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "家具尺寸与房间比例真实",
+          "动线通畅",
+          "门扇开启无遮挡",
+          "同套图例风格统一",
+          "配色清爽专业"
+        ]
+      }
+    },
+    "failureModes": [
+      {
+        "mode": "透视乱入",
+        "zh": "输出变成3D轴测或透视图",
+        "preventionPhrase": "Strictly top-down orthographic floor plan view, flat 2D drawing with no perspective."
+      },
+      {
+        "mode": "墙体被改",
+        "zh": "生成时拆墙/改门洞",
+        "preventionPhrase": "Keep every wall, door and window opening exactly as drawn in the original plan."
+      },
+      {
+        "mode": "标注误读",
+        "zh": "主卧布成书房",
+        "preventionPhrase": "Follow the text labels on the plan for each room's function."
+      },
+      {
+        "mode": "家具比例失真",
+        "zh": "床比房间大、桌子比门小",
+        "preventionPhrase": "All furniture symbols are scaled realistically to the room dimensions."
+      },
+      {
+        "mode": "动线堵死",
+        "zh": "家具挡门挡走道",
+        "preventionPhrase": "Keep clear circulation paths and door swing areas free of furniture."
+      },
+      {
+        "mode": "图例风格混杂",
+        "zh": "一半写实渲染一半线稿",
+        "preventionPhrase": "One consistent clean color floor-plan style across the whole drawing."
+      },
+      {
+        "mode": "文字乱码",
+        "zh": "生成的中文标注文字变乱码",
+        "preventionPhrase": "尽量不要求模型生成文字标注；空间靠地材颜色与家具区分（gpt-image 中文文字生成不可靠）"
+      }
+    ],
+    "tips": [
+      "引导用户在原图用文字标注空间类型，标注越全布置越准",
+      "用户要求逐条落实并复述在返回中（如'餐厅已按六人位餐椅布置'）",
+      "彩平上色属于下一环节『一键彩平图』的强项；本功能重点是『布置』，两者可串联使用"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "餐厅餐椅采用六人位餐椅",
+        "planContext": "户型图标注：入户门、客厅、餐厅、厨房、主卧、次卧、主卫、阳台",
+        "expanded_zh": "将这张原始结构户型图转换为带家具布置的彩色平面布置图，严格俯视正投影、纯二维无透视。墙体、门窗洞口与尺寸比例和原图完全一致。按图中标注逐空间布置：入户门处沿墙鞋柜；客厅沙发组面向电视墙、配茶几地毯；餐厅按用户要求布置六人位长餐桌配六椅、靠墙餐边柜；厨房沿墙L型橱柜带水槽灶台图例；主卧双人床床头靠实墙、两侧床头柜、衣柜；次卧单床加衣柜；主卫马桶、浴室柜、玻璃隔断淋浴区；阳台洗衣机位。家具图例比例真实，动线与门扇开启区留空，浅色地材填充区分空间，家具带柔和投影，整图风格统一清爽专业。",
+        "expanded_en": "Convert this structural floor plan into a furnished color floor plan, strictly top-down orthographic view, flat 2D with no perspective. Keep every wall, door and window opening and the plan's proportions exactly as drawn. Furnish each labeled room: a shoe cabinet along the wall at the entry; a sofa group facing the TV wall with coffee table and rug in the living room; per the request a six-seat dining table with six chairs and a sideboard in the dining room; an L-shaped counter with sink and cooktop symbols in the kitchen; a double bed with headboard against the solid wall, nightstands and wardrobe in the master bedroom; a bed and wardrobe in the secondary bedroom; toilet, vanity and a glass-partitioned shower in the bathroom; a washer position on the balcony. All furniture symbols scale realistically to room dimensions, circulation paths and door swings stay clear, rooms are distinguished by light floor-material fills, furniture casts soft plan shadows, and the whole drawing keeps one clean professional style."
+      }
+    ]
+  }
+}

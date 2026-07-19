@@ -1,0 +1,193 @@
+{
+  "meta": {
+    "id": "pano-render",
+    "version": "1.1",
+    "name": "全景渲染",
+    "description": "用户上传 2:1 全景模型图（SU/3D 导出的等距柱状投影全景白模或线稿全景），可补充提示词，可选类型开关。模型将其渲染为可直接使用的无接缝 2:1 等距柱状全景效果图，供 720 全景看图工具使用。",
+    "taskType": "full-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "输入必须是 2:1 等距柱状投影(equirectangular)，UI 已强提醒；输出也必须保持同投影且左右边缘无缝衔接，否则全景播放器会出现接缝",
+      "本质是『白膜出图』的全景版：几何锁定 + 赋材质打光，外加投影格式与无缝约束两条硬性规则"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "none",
+    "refImages": 0,
+    "userText": "optional",
+    "extraFields": [
+      {
+        "key": "typeToggle",
+        "type": "toggle",
+        "label_zh": "类型选择",
+        "default": "关闭",
+        "note": "UI中该开关语义未标明，实现时按实际业务定义映射（推测为白天/夜景或写实/风格化切换）"
+      }
+    ]
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1,
+    "aspectRatio": "2:1"
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "全景渲染声明 + 投影锁定(2:1等距柱状) + 无缝声明 + 几何锁定 + 风格与材质 + 全景光照 + 畸变正确性 + 写实声明",
+      "layers": [
+        {
+          "layer": "panoIntent",
+          "zh": "全景声明",
+          "note": "必选开头：Render this 2:1 equirectangular panorama model into a photorealistic 360° interior panorama"
+        },
+        {
+          "layer": "projectionLock",
+          "zh": "投影锁定",
+          "note": "必选。保持等距柱状投影特性：水平线在中央、天花在上地面在下、垂直线保持竖直"
+        },
+        {
+          "layer": "seamless",
+          "zh": "无缝声明",
+          "note": "必选硬规则。the left and right edges must连接连续：seamlessly wrap around with perfectly continuous content"
+        },
+        {
+          "layer": "geometryLock",
+          "zh": "几何锁定",
+          "note": "必选。空间结构、家具形体位置遵循模型图，不增删不挪位"
+        },
+        {
+          "layer": "styleMaterials",
+          "zh": "风格与材质",
+          "note": "按用户提示词赋材质；未指定默认现代简约暖调，逐表面点名主材"
+        },
+        {
+          "layer": "panoLighting",
+          "zh": "全景光照",
+          "note": "全景内光源方向全局自洽：窗光从窗的方向来，灯具在其位置发光，无论视角转到哪里阴影逻辑一致"
+        },
+        {
+          "layer": "distortion",
+          "zh": "畸变正确",
+          "note": "等距柱状特有的横向拉伸符合投影规律，天花与地面在极区自然变形"
+        },
+        {
+          "layer": "realism",
+          "zh": "写实声明",
+          "note": "必选。photorealistic interior panorama"
+        }
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Render this 2:1 equirectangular ... 开头，无缝与投影声明必须出现",
+      "length": "70-130 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "普通透视相机表述（wide-angle photo 等会破坏投影）",
+        "negative prompt 语法，改用正向声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层（模型权威）",
+        "items": [
+          "2:1 等距柱状投影格式",
+          "空间结构与家具布局",
+          "门窗与光源位置",
+          "画幅比例"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "全屋材质",
+          "完整光照",
+          "软装细节",
+          "真实色彩"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "左右边缘内容严格连续",
+          "全局光照方向自洽",
+          "投影畸变符合规律",
+          "垂直线保持竖直",
+          "材质纹理随投影正确变形"
+        ]
+      }
+    },
+    "failureModes": [
+      {
+        "mode": "接缝断裂",
+        "zh": "左右边缘对不上，播放器出现裂缝",
+        "preventionPhrase": "The left and right edges wrap around seamlessly with perfectly continuous walls, floor and lighting."
+      },
+      {
+        "mode": "投影被破坏",
+        "zh": "输出变成普通透视图",
+        "preventionPhrase": "Keep the strict 2:1 equirectangular projection: horizon at mid-height, ceiling above, floor below, vertical lines staying vertical."
+      },
+      {
+        "mode": "几何漂移",
+        "zh": "渲染时家具增删挪位",
+        "preventionPhrase": "Follow the model's room structure and furniture placement exactly."
+      },
+      {
+        "mode": "光照不自洽",
+        "zh": "不同方向光源矛盾",
+        "preventionPhrase": "One globally consistent lighting scheme: daylight from the actual window directions, fixtures glowing in their true positions."
+      },
+      {
+        "mode": "极区穿帮",
+        "zh": "天花/地面中心拉花错乱",
+        "preventionPhrase": "The ceiling and floor deform naturally toward the poles following the projection."
+      },
+      {
+        "mode": "画幅漂移",
+        "zh": "输出不是2:1",
+        "preventionPhrase": "后端强制 size 参数为 2:1；提示词同时声明 keep the 2:1 aspect ratio"
+      },
+      {
+        "mode": "渲染感",
+        "zh": "像CG不像实景",
+        "preventionPhrase": "Photorealistic materials and natural light falloff, like a real-estate 360° photograph."
+      }
+    ],
+    "tips": [
+      "上传前检查图是否真 2:1，非 2:1 的普通照片建议走其他工作流",
+      "验收方法：输出图左边缘竖切一条与右边缘拼合看是否连续；有条件用全景播放器实测",
+      "材质描述复用『局部材质修改』materialLibrary 的展开逻辑"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "补充提示词：现代简约，木地板",
+        "expanded_zh": "将这张 2:1 等距柱状全景模型图渲染为写实的 360° 室内全景效果图，严格保持等距柱状投影：水平线居中、垂直线竖直、2:1 画幅不变，左右边缘完全无缝衔接、墙面地面与光照连续。空间结构与家具布局完全遵循模型图。整体现代简约暖调：暖白乳胶漆墙面、浅色木地板（按用户要求）、灰米色布艺沙发与简洁家具，少量绿植软装。全局光照自洽：日光从实际窗户方向入室，天花与地面在极区按投影规律自然变形，材质纹理随投影正确拉伸。写实全景摄影质感，如同实景 720 拍摄。",
+        "expanded_en": "Render this 2:1 equirectangular panorama model into a photorealistic 360° interior panorama, keeping the strict equirectangular projection: horizon at mid-height, vertical lines staying vertical, the 2:1 aspect ratio unchanged, and the left and right edges wrapping around seamlessly with perfectly continuous walls, floor and lighting. Follow the model's room structure and furniture placement exactly. Apply a modern minimalist warm scheme: warm off-white painted walls, light wood flooring per the request, a greige fabric sofa with clean-lined furniture and a few plants. Use one globally consistent lighting scheme with daylight entering from the actual window directions, the ceiling and floor deforming naturally toward the poles, and material textures stretching correctly with the projection. Photorealistic, like a real-estate 360° photograph."
+      }
+    ]
+  }
+}

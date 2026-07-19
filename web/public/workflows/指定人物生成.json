@@ -1,0 +1,209 @@
+{
+  "meta": {
+    "id": "specified-person-add",
+    "version": "1.1",
+    "name": "指定人物生成",
+    "description": "用户上传场景原图并涂抹蒙版指定人物生成位置，再上传人物参考图，输入人物指令（如：一个女人坐在沙发上）。LLM 提炼参考人物的身份特征，扩写为英文编辑提示词，驱动 gpt-image-1 在蒙版位置生成『这个人』，并按场景光照与透视自然融合。",
+    "taskType": "masked-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "与『场景加模特』(scene-add-person) 的区别：加模特生成的是泛化人物，本工作流要求人物长相/发型/体貌忠实于参考图，身份保真是第一优先级",
+      "复用 场景添加人物-v2.json 的蒙版协议、姿势匹配与协调层方法论"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "required",
+    "refImages": 1,
+    "userText": "required",
+    "extraFields": []
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "位置(蒙版语义) + 身份保真(参考图) + 动作/姿势(用户指令) + 服装策略 + 光照匹配 + 尺度与透视 + 摄影风格 + 锁定声明",
+      "layers": [
+        {
+          "layer": "position",
+          "zh": "位置",
+          "note": "描述蒙版区域处的场景物体（沙发/窗边/餐桌），语义辅助，蒙版为权威"
+        },
+        {
+          "layer": "identity",
+          "zh": "身份保真",
+          "note": "第一优先级。the same person shown in the second image：脸部特征、发型发色、体型、肤色都忠实参考图"
+        },
+        {
+          "layer": "pose",
+          "zh": "动作/姿势",
+          "note": "来自用户指令；未指定时按蒙版形状匹配（竖长→站，横低→坐/躺），具体到肢体与场景物体的接触"
+        },
+        {
+          "layer": "outfit",
+          "zh": "服装策略",
+          "note": "用户指定服装>参考图服装>场景协调补全。保持参考图服装时写 wearing the same outfit as in the reference"
+        },
+        {
+          "layer": "lighting",
+          "zh": "光照匹配",
+          "note": "必选。人物受光方向、色温、软硬与场景一致，忽略参考图人像的原光照"
+        },
+        {
+          "layer": "scale",
+          "zh": "尺度与透视",
+          "note": "必选。人物身高比例与场景透视可信，与家具的相对大小合理"
+        },
+        {
+          "layer": "style",
+          "zh": "摄影风格",
+          "note": "必选。candid lifestyle photograph 等写实约束，避免合成感"
+        },
+        {
+          "layer": "lock",
+          "zh": "锁定声明",
+          "note": "必选。蒙版外一切不变"
+        }
+      ]
+    },
+    "maskProtocol": {
+      "principle": "蒙版是人物位置与体积的唯一权威，用户文字位置只做语义配合，冲突时以蒙版为准。",
+      "rules": [
+        "先判断蒙版覆盖的物体/表面，围绕它描述人物接触方式（坐进沙发、靠着窗台、站在地毯上）",
+        "姿势必须能合理装进蒙版形状：竖长条→站姿，横向低位→坐/躺姿，方块中位→坐姿或半身",
+        "人物完整落在蒙版内，肢体接触点（脚/臀/手）带自然接触阴影",
+        "提示词结尾必须包含 'Do not alter anything outside the edited area.'"
+      ]
+    },
+    "referenceProtocol": {
+      "imageOrder": "第一张图=场景原图，第二张图=人物参考图。提示词中用 'the same person shown in the second image' 指代。",
+      "extraction": [
+        "提炼身份特征作为文字冗余保险：性别、年龄段、发型发色、体型、肤色、显著特征（眼镜/胡须），与 identity 指令并用",
+        "参考图为半身/证件照时，下半身按用户指令与场景协调补全，并保持体型一致",
+        "忽略参考图的背景、光照与画质，只保留人物身份特征",
+        "用户文字与参考图冲突时（文字说男人、参考图是女人），以参考图为准，并在返回中注明"
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Add the same person shown in the second image ... 开头，Match / Preserve 收尾",
+      "length": "60-120 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "绝对物理数值（身高/距离），按场景透视自动推算",
+        "negative prompt 语法，改用正向锁定声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层",
+        "items": [
+          "蒙版外全部场景",
+          "参考人物的面部身份/发型/体型",
+          "原图光源与色调",
+          "相机角度与透视"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "人物在指定位置的姿势动作",
+          "服装（按策略）",
+          "表情与视线方向"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "人物受光方向与色温",
+          "肤色在场景光下的自然呈现",
+          "接触阴影",
+          "景深与焦平面一致",
+          "颗粒/清晰度一致",
+          "边缘自然过渡"
+        ]
+      }
+    },
+    "failureModes": [
+      {
+        "mode": "身份漂移",
+        "zh": "生成的人不像参考图",
+        "preventionPhrase": "The person's face, hairstyle, hair color and body type must faithfully match the person in the second image."
+      },
+      {
+        "mode": "剪贴感",
+        "zh": "把参考图人像连光照一起贴进场景",
+        "preventionPhrase": "Re-light the person entirely by the scene's light direction and color temperature, ignoring the reference photo's lighting."
+      },
+      {
+        "mode": "尺度失真",
+        "zh": "人物相对家具过大/过小",
+        "preventionPhrase": "The person's height and proportions must be believable against the surrounding furniture and perspective."
+      },
+      {
+        "mode": "悬浮/无接触影",
+        "zh": "脚不落地、坐姿不陷",
+        "preventionPhrase": "Grounded contact with soft natural shadows; seated weight visibly settles into the cushions."
+      },
+      {
+        "mode": "姿势与蒙版冲突",
+        "zh": "蒙版是竖条却生成坐姿",
+        "preventionPhrase": "The pose must fit naturally within the masked region's shape and extent."
+      },
+      {
+        "mode": "服装策略错误",
+        "zh": "该保留参考服装时换了衣服",
+        "preventionPhrase": "Wearing the same outfit as in the reference image unless the instruction specifies otherwise."
+      },
+      {
+        "mode": "焦平面不符",
+        "zh": "人比同距离物体更清晰/更模糊",
+        "preventionPhrase": "Keep the person in the same focal plane and sharpness as objects at the same distance."
+      },
+      {
+        "mode": "画风不符",
+        "zh": "人像影棚感、磨皮感闯入生活场景",
+        "preventionPhrase": "The result should look like a candid lifestyle photograph taken in one shot, with grain consistent with the original."
+      }
+    ],
+    "tips": [
+      "参考图用正脸或微侧、光照均匀的照片，身份还原最稳",
+      "文字身份描述是保险丝：即使模型对第二张图理解不佳，文字特征也能兜底",
+      "人物指令建议引导用户写『谁+在哪+做什么』一句话即可，其余交给扩写"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "一个女人坐在沙发上",
+        "maskContext": "蒙版覆盖客厅沙发左半侧，横向低位",
+        "refImageContext": "参考图为长直发、圆脸、戴细框眼镜的年轻女性半身照",
+        "expanded_zh": "在蒙版区域的沙发上添加第二张图中的同一位女性：长直发、圆脸、细框眼镜，面部特征、发型与体型忠实参考图。她随意地坐在沙发左侧，双腿并拢微斜，一只手搭在扶手上，神态放松。服装保持参考图中的样式，色调与客厅配色协调。她的受光方向与色温完全按场景现有光照重打，臀部自然陷入坐垫、脚落地带柔和接触阴影，景深与颗粒和原图一致。画面像一张真实抓拍的生活照。蒙版外不做任何改动。",
+        "expanded_en": "Add the same person shown in the second image sitting on the sofa in the masked area: a young woman with long straight hair, a round face and thin-framed glasses, her facial features, hairstyle and body type faithfully matching the reference. She sits casually on the left side of the sofa, legs together and slightly angled, one hand resting on the armrest, looking relaxed. She wears the same outfit as in the reference, its tones harmonizing with the room's palette. Re-light her entirely by the scene's existing light direction and color temperature, her weight settling into the cushions with grounded feet and soft contact shadows, depth of field and grain consistent with the original photo. The result should look like a candid lifestyle photograph. Do not alter anything outside the edited area."
+      }
+    ]
+  }
+}

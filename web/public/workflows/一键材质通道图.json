@@ -1,0 +1,222 @@
+{
+  "meta": {
+    "id": "material-id-map",
+    "version": "1.1",
+    "name": "一键材质通道图",
+    "description": "用户上传一张效果图，一键生成该图的材质通道图（Material ID Map）：同一材质的区域填同一种纯色色块，不同材质用高对比纯色区分，形体轮廓与原图逐像素对齐。供后期在 PS 中快速选区调整材质使用。",
+    "taskType": "full-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "行业用法：渲染器（VRay/Corona）出图时可附带 Material ID 通道；实拍图和AI生成图没有该通道，本功能用 AI 反推",
+      "输出不是照片，是纯色分块图——写实类的所有约束在这里反转：无光影、无纹理、无渐变"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "none",
+    "refImages": 0,
+    "userText": "none",
+    "extraFields": []
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "通道图声明 + 逐像素对齐锁定 + 材质分割规则 + 纯色填充规则 + 高对比配色 + 平面化声明(无光影无纹理) + 边缘精度",
+      "layers": [
+        {
+          "layer": "idMapIntent",
+          "zh": "通道图声明",
+          "note": "必选开头：Convert this interior photo into a flat material ID map"
+        },
+        {
+          "layer": "alignment",
+          "zh": "对齐锁定",
+          "note": "必选最高权重。所有物体轮廓、透视、构图与原图逐像素对应，不增删不挪位"
+        },
+        {
+          "layer": "segmentation",
+          "zh": "材质分割",
+          "note": "核心。按『材质』而非『物体』分割：同为木饰面的墙和柜同色；一件沙发的布艺与金属腿两色"
+        },
+        {
+          "layer": "solidFill",
+          "zh": "纯色填充",
+          "note": "必选。每个材质区域一种完全均匀的纯色，色块内无任何变化"
+        },
+        {
+          "layer": "contrast",
+          "zh": "高对比配色",
+          "note": "相邻材质区域用色相差异大的饱和色，方便PS魔棒/色彩范围选区"
+        },
+        {
+          "layer": "flatness",
+          "zh": "平面化声明",
+          "note": "必选。无光影、无阴影、无渐变、无纹理、无高光——照片的一切摄影属性全部剥离"
+        },
+        {
+          "layer": "edges",
+          "zh": "边缘精度",
+          "note": "必选。色块边缘锐利干净，严格沿材质交界线，无羽化无溢色"
+        }
+      ]
+    },
+    "colorConvention": {
+      "note": "建议色约定（提示词中点名主要区域的分配色，帮助模型稳定输出）",
+      "assignments": [
+        {
+          "surface": "墙面乳胶漆",
+          "color": "light yellow"
+        },
+        {
+          "surface": "木地板/木饰面",
+          "color": "orange"
+        },
+        {
+          "surface": "石材/瓷砖",
+          "color": "cyan"
+        },
+        {
+          "surface": "布艺（沙发/床品）",
+          "color": "magenta"
+        },
+        {
+          "surface": "窗帘纱帘",
+          "color": "purple"
+        },
+        {
+          "surface": "金属",
+          "color": "yellow-green"
+        },
+        {
+          "surface": "玻璃/窗",
+          "color": "blue"
+        },
+        {
+          "surface": "地毯",
+          "color": "red"
+        },
+        {
+          "surface": "天花",
+          "color": "light grey"
+        },
+        {
+          "surface": "绿植",
+          "color": "green"
+        }
+      ]
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Convert this interior photo into a flat material ID map 开头",
+      "length": "70-120 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "photorealistic/lighting/shadow 等写实词汇（与目标相反）",
+        "negative prompt 语法，用正向声明 completely flat colors"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层",
+        "items": [
+          "所有物体的轮廓与形状",
+          "透视与构图",
+          "画幅比例",
+          "材质交界线位置"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "按材质分区的纯色填充",
+          "高对比配色",
+          "锐利的区块边缘"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "同材质全图同色（左墙右墙同漆则同色）",
+          "相邻区块色相拉开",
+          "边缘与原图轮廓精确重合",
+          "色块内绝对均匀"
+        ]
+      }
+    },
+    "failureModes": [
+      {
+        "mode": "光影残留",
+        "zh": "色块内保留了明暗渐变",
+        "preventionPhrase": "Every region is one perfectly uniform flat color with no shading, gradients, highlights or shadows at all."
+      },
+      {
+        "mode": "轮廓漂移",
+        "zh": "色块边缘和原图对不上，选区没法用",
+        "preventionPhrase": "All outlines align pixel-accurately with the original photo's objects and material boundaries."
+      },
+      {
+        "mode": "按物体误分",
+        "zh": "把整个沙发涂一色，忽略了金属腿",
+        "preventionPhrase": "Segment by material, not by object: different materials on one object get different colors."
+      },
+      {
+        "mode": "同材质不同色",
+        "zh": "同种地板在两个区域被涂成两色",
+        "preventionPhrase": "The same material always uses the same color everywhere in the image."
+      },
+      {
+        "mode": "相邻色接近",
+        "zh": "两个相邻材质颜色太像难选区",
+        "preventionPhrase": "Adjacent regions use strongly contrasting hues."
+      },
+      {
+        "mode": "写实回流",
+        "zh": "输出还是半张照片",
+        "preventionPhrase": "The result is a completely flat 2D color-coded map, not a photograph."
+      },
+      {
+        "mode": "边缘羽化",
+        "zh": "色块边缘模糊溢色",
+        "preventionPhrase": "Hard, clean, anti-aliased edges exactly on the material boundaries."
+      }
+    ],
+    "tips": [
+      "输出配合 PS『选择-色彩范围』即可秒选任何材质区域",
+      "复杂图（材质种类>10）可能出现颜色复用，建议后端将 colorConvention 分配表随结果返回给用户",
+      "该功能与『指定材质替换』组合：通道图选区→回到平台做局部替换，形成专业闭环"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "（无输入，上传客厅效果图）",
+        "expanded_zh": "将这张客厅效果图转换为平面材质通道图：所有物体轮廓、透视与构图和原图逐像素对齐。按材质分割并填充完全均匀的纯色：墙面乳胶漆浅黄色、木地板橙色、布艺沙发品红色、金属腿黄绿色、玻璃窗蓝色、窗帘紫色、地毯红色、天花浅灰色、绿植绿色，同种材质全图同色，不同材质用高对比色相区分。整图完全平面化：无光影、无阴影、无渐变、无纹理、无高光。色块边缘锐利干净，严格沿材质交界线。输出是二维色块编码图，不是照片。",
+        "expanded_en": "Convert this interior photo into a flat material ID map: every object outline, the perspective and the composition align pixel-accurately with the original. Segment by material and fill each region with one perfectly uniform flat color — light yellow for painted walls, orange for the wood floor, magenta for the fabric sofa, yellow-green for metal legs, blue for glass and windows, purple for curtains, red for the rug, light grey for the ceiling, green for plants — the same material always using the same color everywhere, and adjacent regions using strongly contrasting hues. The image is completely flat with no shading, gradients, highlights, shadows or textures. Hard clean edges exactly on the material boundaries. The result is a 2D color-coded map, not a photograph."
+      }
+    ]
+  }
+}

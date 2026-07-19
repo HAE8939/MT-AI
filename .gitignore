@@ -11,3 +11,11 @@ data/
 web/dist
 # contains real API key - do not commit
 .claude/skills/ai-api-skill/SKILL.md
+
+# 构建产物（本地临时 tar，勿入库）
+web/mt-ai-dist.tar.gz
+docs/mt-ai-docs.tar.gz
+
+# NAS 部署文档含内网 IP/SSH 凭据，仅本地保留（origin 为公开仓库）
+docs/NAS-DEPLOYMENT.md
+docs/deploy-to-nas.sh

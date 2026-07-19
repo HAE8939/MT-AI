@@ -1,0 +1,216 @@
+{
+  "meta": {
+    "id": "color-floorplan",
+    "version": "1.1",
+    "name": "一键彩平图",
+    "description": "两种模式：单图模式——用户上传黑白平面布置图，直接渲染为彩色平面图；参考图模式——额外上传一张彩平参考图，按参考图的配色与表达风格上色。选择分辨率（1k/2k/4k）。墙体、家具布置、图纸内容完全不变，只做『上色渲染』。",
+    "taskType": "full-edit",
+    "targetModel": "gpt-image-1",
+    "endpoint": "/v1/images/edits",
+    "references": [
+      "与『家装平面方案生成』的分工：那边负责从结构图到布置；这边负责从布置图到上色表达。两者可串联",
+      "彩平是给客户看的销售物料，颜值与清晰度是第一诉求"
+    ]
+  },
+  "inputSpec": {
+    "image": "required",
+    "mask": "none",
+    "refImages": 1,
+    "refImagesOptional": true,
+    "userText": "none",
+    "extraFields": [
+      {
+        "key": "mode",
+        "type": "tab",
+        "label_zh": "模式",
+        "options": [
+          "彩平图（单图模式）",
+          "彩平图（参考图模式）"
+        ],
+        "default": "彩平图（单图模式）"
+      },
+      {
+        "key": "resolution",
+        "type": "select",
+        "label_zh": "分辨率选择",
+        "options": [
+          "1k",
+          "2k",
+          "4k"
+        ],
+        "default": "1k"
+      }
+    ]
+  },
+  "outputSpec": {
+    "type": "image",
+    "count": 1
+  },
+  "promptEngine": {
+    "llmGuidance": {
+      "targetLLM": "GPT-5.5 级高质量文本模型",
+      "principle": "本知识库对扩写模型的效力分两级：『硬契约』必须严格遵守，『脚手架』是质量标杆、鼓励超越。",
+      "hardContract": {
+        "zh": "以下内容约束的是下游图像模型的特性而非你的能力，任何时候严格遵守：",
+        "items": [
+          "outputContract 的全部规定：英文、指令句式、长度上限、禁 negative prompt、只输出提示词本身",
+          "maskProtocol 与 referenceProtocol 的权威关系：蒙版是位置/范围的唯一权威，图序约定（第几张图扮演什么角色）不可更改",
+          "failureModes 的防错意识：按当前场景判断哪些失败模式有风险，将对应防错短语的语义融入提示词（措辞可自然改写，语义不可丢）",
+          "用户明确指定的任何属性永远拥有最高优先级"
+        ]
+      },
+      "scaffolding": {
+        "zh": "以下内容是参考素材与质量底线，不是封闭选项：",
+        "items": [
+          "templates 与 buildExamples 是质量标杆和 few-shot 示例：它们展示合格的信息密度与写法，不要求套用；基于对原图与用户意图的理解自由创作出更贴切的表达是更好的结果",
+          "各类词汇库（materialLibrary / styleLibrary / attributes / moodVocabulary / roomPresets 等）是开放示例：库外内容按同样的信息密度格式自行展开（如材质 = 颜色+纹理+饰面），不得退化为单词级的泛泛描述",
+          "selectionRules / coherenceRules 等流程与搭配规则收敛为原则：自行判断场景归属与整体自洽性（季节×正式度×配色等），无需机械执行步骤"
+        ]
+      }
+    },
+    "coreFormula": {
+      "pattern": "上色声明(俯视平面锁定) + 内容锁定(墙体/家具/布置) + 配色方案(默认或参考图提炼) + 材质填充表达 + 家具渲染表达 + 投影与立体感 + 图面品质",
+      "layers": [
+        {
+          "layer": "colorIntent",
+          "zh": "上色声明",
+          "note": "必选开头：Render this black-and-white floor plan into a polished color floor plan, keeping the strict top-down orthographic view"
+        },
+        {
+          "layer": "contentLock",
+          "zh": "内容锁定",
+          "note": "必选最高权重。墙体、门窗、每件家具的位置形状、房间划分与原图完全一致，只上色不改图"
+        },
+        {
+          "layer": "colorScheme",
+          "zh": "配色方案",
+          "note": "单图模式用默认清爽方案（暖白+木色+灰米+局部绿植色）；参考图模式从参考彩平提炼配色与风格"
+        },
+        {
+          "layer": "floorFills",
+          "zh": "材质填充",
+          "note": "各空间地材填色：卧室木色地板纹、卫生间浅灰砖纹、阳台浅色砖、客餐厅木色或浅石色"
+        },
+        {
+          "layer": "furnitureRender",
+          "zh": "家具渲染",
+          "note": "家具上色带材质感：沙发织物色、床品分层、桌面木色，绿植点缀"
+        },
+        {
+          "layer": "shadow",
+          "zh": "投影立体感",
+          "note": "家具与墙体带柔和统一方向的图面投影，微立体感但仍是平面图"
+        },
+        {
+          "layer": "quality",
+          "zh": "图面品质",
+          "note": "必选。干净、清晰、专业级彩平表达，无文字乱码无水印"
+        }
+      ]
+    },
+    "referenceProtocol": {
+      "imageOrder": "第一张图=待上色平面图（内容权威），第二张图（参考图模式）=彩平风格参考（配色与表达权威）。",
+      "extraction": [
+        "从参考彩平提取：地材配色、家具色系、投影风格、饱和度倾向、整体气质（清新/浓郁/商务）",
+        "不从参考彩平提取：户型、家具布置、图纸内容",
+        "单图模式跳过此步，使用 defaultScheme"
+      ]
+    },
+    "defaultScheme": {
+      "zh": "默认配色：暖白墙体留白、原木色地板、浅灰卫浴砖、灰米色布艺家具、深灰墙体线、点缀绿植色，低饱和清爽风",
+      "en": "warm off-white rooms, natural light-wood flooring fills, pale grey bathroom tiles, greige fabric furniture, dark grey wall lines, soft green plants, low-saturation fresh and clean look"
+    },
+    "outputContract": {
+      "language": "English only",
+      "format": "单段指令句，以 Render this black-and-white floor plan into ... 开头",
+      "length": "70-120 英文单词",
+      "style": "指令句式，不用逗号短语堆砌，不用列表",
+      "forbidden": [
+        "解释性文字，只输出提示词本身",
+        "任何改变布置/透视的表述",
+        "negative prompt 语法，改用正向声明"
+      ]
+    },
+    "intentFramework": {
+      "preserve": {
+        "zh": "保留层（图纸权威）",
+        "items": [
+          "墙体与户型",
+          "门窗位置",
+          "全部家具的位置与形状",
+          "空间划分",
+          "俯视正投影视角",
+          "原图文字标注（如有，保持原样不重绘）"
+        ]
+      },
+      "introduce": {
+        "zh": "引入层",
+        "items": [
+          "地材填色与纹理",
+          "家具材质色",
+          "图面投影",
+          "绿植与软装点缀色"
+        ]
+      },
+      "harmonize": {
+        "zh": "协调层（成败关键）",
+        "items": [
+          "全图一套配色体系",
+          "投影方向统一",
+          "纹理尺度符合图纸比例",
+          "色彩低饱和不刺眼",
+          "空间之间色彩有区分又和谐"
+        ]
+      }
+    },
+    "failureModes": [
+      {
+        "mode": "布置被改",
+        "zh": "上色时家具挪位/增删",
+        "preventionPhrase": "Keep every wall, door, window and furniture symbol exactly where and how it is drawn; only add color and material rendering."
+      },
+      {
+        "mode": "透视乱入",
+        "zh": "输出变轴测/3D",
+        "preventionPhrase": "Strict top-down orthographic view, flat 2D floor plan."
+      },
+      {
+        "mode": "文字乱码",
+        "zh": "原图标注被重绘成乱码",
+        "preventionPhrase": "Leave any existing text labels untouched and legible."
+      },
+      {
+        "mode": "配色脏乱",
+        "zh": "高饱和大红大绿",
+        "preventionPhrase": "A cohesive low-saturation professional palette."
+      },
+      {
+        "mode": "投影方向乱",
+        "zh": "各家具投影方向不一致",
+        "preventionPhrase": "All plan shadows fall in one consistent direction with soft edges."
+      },
+      {
+        "mode": "纹理失真",
+        "zh": "地板纹大得像栅栏",
+        "preventionPhrase": "Material textures are scaled subtly to the plan's drawing scale."
+      },
+      {
+        "mode": "参考风格未生效",
+        "zh": "参考图模式下仍出默认配色",
+        "preventionPhrase": "参考图模式扩写时必须把提炼的配色具体写入（named colors），不能只写 follow the reference style"
+      }
+    ],
+    "tips": [
+      "参考图模式的价值在团队统一出图风格：同一张参考彩平让全公司出图一个味",
+      "上游是『家装平面方案生成』的输出时，两步串联即『结构图→布置图→彩平图』完整链路",
+      "4k 适合打印物料，1k 适合线上快速预览"
+    ],
+    "buildExamples": [
+      {
+        "userInput": "单图模式；分辨率2k",
+        "expanded_zh": "将这张黑白平面布置图渲染为精致的彩色平面图，严格保持俯视正投影与纯二维表达，墙体、门窗、每件家具的位置与形状、空间划分与原图完全一致，原有文字标注保持清晰不动，只做上色渲染。默认清爽配色：暖白房间底色、原木色地板填充（含卧室客餐厅）、卫浴浅灰砖、灰米色布艺家具、深灰墙体、绿植点缀，低饱和专业色系。家具与墙体带同一方向的柔和图面投影，地板纹理尺度贴合图纸比例。整图干净清晰，专业彩平品质。",
+        "expanded_en": "Render this black-and-white floor plan into a polished color floor plan, keeping the strict top-down orthographic flat 2D view. Every wall, door, window and furniture symbol stays exactly where and how it is drawn, with any existing text labels left untouched and legible — only color and material rendering are added. Use a fresh default palette: warm off-white room bases, natural light-wood flooring fills, pale grey bathroom tiles, greige fabric furniture, dark grey walls and soft green plants, all in a cohesive low-saturation professional scheme. All plan shadows fall in one consistent soft direction, and material textures scale subtly to the drawing. Clean, crisp, professional presentation quality."
+      }
+    ]
+  }
+}
